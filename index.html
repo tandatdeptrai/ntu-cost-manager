@@ -154,12 +154,12 @@
                 exchangeRate: 18500 
             },
             plans: [
-                { id: 1, catId: 1, desc: 'Vietjet Air (CXR-SIN) bay thẳng', unit: 3500000, qty: 5, total: 17500000, selected: false, currency: 'VND', originalUnit: 3500000 },
-                { id: 2, catId: 1, desc: 'Scoot (SGN-SIN) + Xe giường nằm', unit: 2800000, qty: 5, total: 14000000, selected: true, currency: 'VND', originalUnit: 2800000 },
-                { id: 3, catId: 2, desc: 'NTU Guest House', unit: 1200000, qty: 4, total: 4800000, selected: true, currency: 'VND', originalUnit: 1200000 },
-                { id: 4, catId: 2, desc: 'Hostel Jurong West', unit: 800000, qty: 4, total: 3200000, selected: false, currency: 'VND', originalUnit: 800000 },
-                { id: 5, catId: 4, desc: 'Ăn uống Canteen NTU', unit: 370000, qty: 20, total: 7400000, selected: true, currency: 'SGD', originalUnit: 20 },
-                { id: 6, catId: 3, desc: 'Grab & MRT nội địa', unit: 370000, qty: 2, total: 740000, selected: true, currency: 'SGD', originalUnit: 20, routes: [{from: 'Sân bay Changi', to: 'Hostel Jurong West'}, {from: 'Hostel Jurong West', to: 'NTU Singapore'}] }
+                { id: 1, catId: 1, desc: 'Vietjet Air (CXR-SIN) bay thẳng', unit: 3500000, qty: 5, total: 17500000, selected: false, currency: 'VND', originalUnit: 3500000, mapLocation: 'Changi Airport', notes: 'Gồm 20kg ký gửi' },
+                { id: 2, catId: 1, desc: 'Scoot (SGN-SIN) + Xe giường nằm', unit: 2800000, qty: 5, total: 14000000, selected: true, currency: 'VND', originalUnit: 2800000, mapLocation: 'Bến xe Miền Đông, TP.HCM', notes: '' },
+                { id: 3, catId: 2, desc: 'NTU Guest House', unit: 1200000, qty: 4, total: 4800000, selected: true, currency: 'VND', originalUnit: 1200000, mapLocation: 'NTU Guest House Singapore', notes: '' },
+                { id: 4, catId: 2, desc: 'Hostel Jurong West', unit: 800000, qty: 4, total: 3200000, selected: false, currency: 'VND', originalUnit: 800000, mapLocation: 'Jurong West, Singapore', notes: '' },
+                { id: 5, catId: 4, desc: 'Ăn uống Canteen NTU', unit: 370000, qty: 20, total: 7400000, selected: true, currency: 'SGD', originalUnit: 20, mapLocation: 'North Spine Food Court NTU', notes: '' },
+                { id: 6, catId: 3, desc: 'Grab & MRT nội địa', unit: 370000, qty: 2, total: 740000, selected: true, currency: 'SGD', originalUnit: 20, routes: [{from: 'Sân bay Changi', to: 'Hostel Jurong West'}, {from: 'Hostel Jurong West', to: 'NTU Singapore'}], mapLocation: '', notes: '' }
             ],
             actuals: [
                 { id: 1, catId: 1, desc: 'Mua vé Scoot đợt 1', amount: 14200000, date: '2026-02-15', currency: 'VND', originalAmount: 14200000 },
@@ -215,7 +215,6 @@
                 </div>
             `;
             openModal(m);
-            // Gán sự kiện thực thi sau khi render Modal
             setTimeout(() => {
                 document.getElementById('btnConfirmAction').onclick = () => {
                     onConfirmCallback();
@@ -250,6 +249,54 @@
                 overlay.classList.add('hidden');
             }
         }
+
+        // Hàm hỗ trợ Paste (dán) hình ảnh trực tiếp vào Thẻ div contenteditable
+        window.setupNotesPasteHandler = () => {
+            const notesDiv = document.getElementById('inpPlanNotes');
+            if (!notesDiv) return;
+            notesDiv.addEventListener('paste', function(e) {
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                let hasImage = false;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf("image") !== -1) {
+                        hasImage = true;
+                        const blob = items[i].getAsFile();
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            const img = document.createElement('img');
+                            img.src = event.target.result;
+                            img.style.maxWidth = '100%';
+                            img.style.maxHeight = '300px';
+                            img.style.borderRadius = '8px';
+                            img.style.marginTop = '8px';
+                            img.style.marginBottom = '8px';
+                            img.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+                            
+                            const sel = window.getSelection();
+                            if (sel.getRangeAt && sel.rangeCount) {
+                                let range = sel.getRangeAt(0);
+                                if (notesDiv.contains(range.commonAncestorContainer)) {
+                                    range.deleteContents();
+                                    range.insertNode(img);
+                                    range.setStartAfter(img);
+                                    range.setEndAfter(img);
+                                    sel.removeAllRanges();
+                                    sel.addRange(range);
+                                } else {
+                                    notesDiv.appendChild(img);
+                                }
+                            } else {
+                                notesDiv.appendChild(img);
+                            }
+                        };
+                        reader.readAsDataURL(blob);
+                    }
+                }
+                if (hasImage) {
+                    e.preventDefault(); 
+                }
+            });
+        };
 
         // ==========================================
         // 3. ROUTING & RENDERING
@@ -538,8 +585,7 @@
                 if (found) { ev = found; isEdit = true; }
             }
 
-            // Tạo danh sách chọn phương án để gắn vào Lịch trình
-            let planOptions = `<option value="">-- Không gắn --</option>`;
+            let planOptions = `<option value="">-- Không gắn phương án --</option>`;
             state.plans.forEach(p => {
                 let catName = CATEGORIES.find(c => c.id == p.catId)?.name || '';
                 planOptions += `<option value="${p.id}" ${ev.planId == p.id ? 'selected' : ''}>${catName.substring(3)} - ${p.desc}</option>`;
@@ -601,14 +647,14 @@
 
             if (!state.timeline) state.timeline = [];
 
-            if (id) { // Edit
+            if (id) { 
                 const ev = state.timeline.find(t => t.id == id);
                 if(ev) {
                     ev.date = date; ev.time = time; ev.title = title;
                     ev.location = location; ev.notes = notes; ev.planId = planId;
                 }
                 showToast("Đã cập nhật lịch trình");
-            } else { // Add
+            } else { 
                 state.timeline.push({ id: Date.now(), date, time, title, location, notes, planId });
                 showToast("Đã thêm vào lịch trình");
             }
@@ -681,14 +727,17 @@
                                                class="w-4 h-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer rounded"
                                                ${state.role !== 'admin' ? 'disabled' : ''}>
                                     </td>
-                                    <td class="p-3 md:p-4 font-medium text-gray-800 break-words">${plan.desc}</td>
+                                    <td class="p-3 md:p-4 font-medium text-gray-800 break-words">
+                                        ${plan.desc}
+                                        ${plan.notes ? `<i class="fa-solid fa-sticky-note text-yellow-500 ml-1" title="Có ghi chú"></i>` : ''}
+                                    </td>
                                     <td class="p-3 md:p-4 text-right">
                                         ${plan.currency === 'SGD' ? `<div class="font-bold text-gray-800 whitespace-nowrap">${formatSGD(plan.originalUnit)}</div><div class="text-[10px] md:text-xs text-gray-400 font-medium whitespace-nowrap">~ ${formatMoney(plan.unit)}</div>` : `<div class="font-bold text-gray-800 whitespace-nowrap">${formatMoney(plan.unit)}</div>`}
                                     </td>
                                     <td class="p-3 md:p-4 text-center text-gray-600">${plan.qty}</td>
                                     <td class="p-3 md:p-4 text-right font-bold ${plan.selected ? 'text-indigo-700' : 'text-gray-800'} whitespace-nowrap">${formatMoney(plan.total)}</td>
                                     <td class="p-3 md:p-4 text-center flex justify-center space-x-2">
-                                        <button type="button" onclick="viewPlanDetails(${plan.id})" class="text-blue-500 hover:text-blue-700 transition p-1" title="Chi tiết & Sửa">
+                                        <button type="button" onclick="viewPlanDetails(${plan.id})" class="text-blue-500 hover:text-blue-700 transition p-1" title="Chi tiết, Ghi chú & Bản đồ">
                                             <i class="fa-solid fa-map-location-dot pointer-events-none"></i>
                                         </button>
                                         <button type="button" onclick="deletePlan(${plan.id})" class="text-red-400 hover:text-red-600 transition p-1 ${state.role !== 'admin' ? 'hidden' : ''}" title="Xóa">
@@ -715,17 +764,15 @@
             container.innerHTML = html;
         }
 
-        // Đã sửa lại hàm chọn phương án để hỗ trợ Checkbox (Chọn/Bỏ chọn độc lập)
         function togglePlanSelection(planId) {
             if(!checkAuth()) return;
             const targetPlan = state.plans.find(p => p.id == planId);
             if (targetPlan) {
-                targetPlan.selected = !targetPlan.selected; // Đảo trạng thái hiện tại
+                targetPlan.selected = !targetPlan.selected; 
                 renderTab();
             }
         }
 
-        // Đã sửa hàm thuật toán: Giờ nó sẽ chỉ tự động chọn 1 phương án rẻ nhất cho mỗi hạng mục để làm gốc, bạn vẫn có thể chọn thêm thủ công
         function optimizePlans() {
             if(!checkAuth()) return;
             let changed = false;
@@ -748,6 +795,12 @@
             if(!checkAuth()) return;
             showConfirm('Bạn có chắc chắn muốn xóa phương án này?', () => {
                 state.plans = state.plans.filter(p => p.id != id);
+                
+                // Nếu bị xóa, gỡ liên kết khỏi timeline
+                if (state.timeline) {
+                    state.timeline.forEach(t => { if(t.planId == id) t.planId = null; });
+                }
+
                 showToast('Đã xóa phương án thành công!', 'success');
                 renderTab();
             });
@@ -755,11 +808,13 @@
 
         function viewPlanDetails(id) {
             const plan = state.plans.find(p => p.id == id);
-            if (!plan) return; // Bảo vệ lỗi không tìm thấy plan
+            if (!plan) return; 
             const cat = CATEGORIES.find(c => c.id == plan.catId);
             
-            let searchQuery = plan.desc;
-            if(cat.id === 2 || cat.id === 3 || cat.id === 4) { searchQuery += " Singapore"; }
+            // Lấy địa điểm Bản đồ (Ưu tiên ô Map Location, nếu trống thì lấy Tên mô tả)
+            let searchQuery = plan.mapLocation && plan.mapLocation.trim() !== '' ? plan.mapLocation : plan.desc;
+            if(!plan.mapLocation && (cat.id === 2 || cat.id === 3 || cat.id === 4)) { searchQuery += " Singapore"; }
+            
             const query = encodeURIComponent(searchQuery);
             const embedUrl = `https://maps.google.com/maps?q=${query}&t=&z=14&ie=UTF8&iwloc=&output=embed`;
             const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${query}`;
@@ -767,7 +822,7 @@
             let routeHtml = '';
             if (plan.routes && plan.routes.length > 0) {
                 routeHtml = `
-                    <h4 class="font-bold text-gray-800 mb-2 md:mb-3 text-sm md:text-base"><i class="fa-solid fa-route text-indigo-500 mr-2"></i>Lộ trình chi tiết</h4>
+                    <h4 class="font-bold text-gray-800 mb-2 md:mb-3 text-sm md:text-base mt-4"><i class="fa-solid fa-route text-indigo-500 mr-2"></i>Lộ trình chi tiết</h4>
                     <div class="space-y-2 mb-4 md:mb-6 max-h-[200px] overflow-y-auto pr-1 md:pr-2 table-scroll-container">
                 `;
                 plan.routes.forEach((r, idx) => {
@@ -792,6 +847,16 @@
                     `;
                 });
                 routeHtml += `</div>`;
+            }
+
+            let notesHtml = '';
+            if (plan.notes && plan.notes.trim() !== '') {
+                notesHtml = `
+                    <h4 class="font-bold text-gray-800 mb-2 md:mb-3 text-sm md:text-base mt-4"><i class="fa-solid fa-sticky-note text-yellow-500 mr-2"></i>Ghi chú & Hình ảnh đính kèm</h4>
+                    <div class="bg-yellow-50 p-3 md:p-4 rounded-xl border border-yellow-100 text-sm text-gray-700 overflow-x-auto mb-4 md:mb-6">
+                        ${plan.notes}
+                    </div>
+                `;
             }
 
             const m = `
@@ -829,8 +894,9 @@
                         </div>
 
                         ${routeHtml}
+                        ${notesHtml}
 
-                        <h4 class="font-bold text-gray-800 mb-2 md:mb-3 text-sm md:text-base"><i class="fa-solid fa-location-dot text-red-500 mr-2"></i>Bản đồ tổng quan</h4>
+                        <h4 class="font-bold text-gray-800 mb-2 md:mb-3 text-sm md:text-base"><i class="fa-solid fa-location-dot text-red-500 mr-2"></i>Bản đồ: ${searchQuery}</h4>
                         <div class="w-full h-40 md:h-48 bg-gray-200 rounded-xl overflow-hidden relative shadow-inner border border-gray-300">
                             <iframe width="100%" height="100%" frameborder="0" style="border:0" src="${embedUrl}" allowfullscreen></iframe>
                         </div>
@@ -869,6 +935,9 @@
                     `;
                 });
             }
+
+            const mapLocVal = plan.mapLocation || '';
+            const notesVal = plan.notes || '';
 
             const m = `
                 <div class="p-4 md:p-6 max-h-[85vh] flex flex-col">
@@ -910,6 +979,17 @@
                         </div>
 
                         <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Vị trí chính xác trên Google Map (Tùy chọn)</label>
+                            <input type="text" id="inpMapLoc" value="${mapLocVal}" placeholder="VD: Sân bay quốc tế Changi..." class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                            <p class="text-[10px] md:text-xs text-gray-500 mt-1">Dùng để trỏ bản đồ chính xác hơn thay vì lấy tên "Mô tả phương án".</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán ảnh)</span></label>
+                            <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 focus:border-indigo-500 focus:outline-none text-sm md:text-base bg-white">${notesVal}</div>
+                        </div>
+
+                        <div>
                             <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
                             <input type="text" id="inpTotal" value="${formatMoney(plan.total)}" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
                         </div>
@@ -921,6 +1001,9 @@
                 </div>
             `;
             openModal(m);
+
+            // Kích hoạt sự kiện dán hình ảnh
+            setTimeout(window.setupNotesPasteHandler, 50);
 
             window.renderRouteInputs = () => {
                 const catId = document.getElementById('inpCatId').value;
@@ -985,6 +1068,8 @@
             const currency = document.getElementById('inpCurrency').value;
             const originalUnit = parseFloat(document.getElementById('inpUnit').value) || 0;
             const qty = parseFloat(document.getElementById('inpQty').value) || 0;
+            const mapLocation = document.getElementById('inpMapLoc').value.trim();
+            const notes = document.getElementById('inpPlanNotes').innerHTML;
             
             if(!desc || originalUnit <= 0) { showToast("Dữ liệu không hợp lệ!", "error"); return; }
 
@@ -1003,6 +1088,7 @@
             
             plan.desc = desc; plan.currency = currency; plan.originalUnit = originalUnit;
             plan.unit = unit; plan.qty = qty; plan.routes = routes;
+            plan.mapLocation = mapLocation; plan.notes = notes;
             plan.total = (plan.catId === 3) ? unit : unit * qty;
 
             showToast('Cập nhật thành công!'); renderTab(); viewPlanDetails(id);
@@ -1052,6 +1138,17 @@
                         </div>
 
                         <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Vị trí chính xác trên Google Map (Tùy chọn)</label>
+                            <input type="text" id="inpMapLoc" placeholder="VD: Sân bay quốc tế Changi..." class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                            <p class="text-[10px] md:text-xs text-gray-500 mt-1">Dùng để trỏ bản đồ chính xác hơn thay vì lấy tên "Mô tả phương án".</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán ảnh)</span></label>
+                            <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 focus:border-indigo-500 focus:outline-none text-sm md:text-base bg-white"></div>
+                        </div>
+
+                        <div>
                             <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
                             <input type="text" id="inpTotal" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
                         </div>
@@ -1064,6 +1161,9 @@
             `;
             openModal(m);
             
+            // Kích hoạt sự kiện dán hình ảnh
+            setTimeout(window.setupNotesPasteHandler, 50);
+
             window.toggleRouteSection = () => {
                 const catId = document.getElementById('inpCatId').value;
                 const routeSec = document.getElementById('routeSection');
@@ -1134,6 +1234,8 @@
             const currency = document.getElementById('inpCurrency').value;
             const originalUnit = parseFloat(document.getElementById('inpUnit').value) || 0;
             const qty = parseFloat(document.getElementById('inpQty').value) || 0;
+            const mapLocation = document.getElementById('inpMapLoc').value.trim();
+            const notes = document.getElementById('inpPlanNotes').innerHTML;
             
             if(!desc || originalUnit <= 0) { showToast("Dữ liệu không hợp lệ!", "error"); return; }
 
@@ -1154,7 +1256,7 @@
             const isFirstInCategory = !state.plans.some(p => p.catId === catId);
 
             state.plans.push({
-                id: Date.now(), catId, desc, unit, qty, total,
+                id: Date.now(), catId, desc, unit, qty, total, mapLocation, notes,
                 currency, originalUnit, routes, selected: isFirstInCategory
             });
 
