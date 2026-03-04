@@ -237,6 +237,38 @@
             overlay.classList.toggle('hidden');
         }
 
+        // Helper function to resize large images to base64 to avoid Firebase 1MB limits
+        function resizeImage(file, maxSize, callback) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxSize) {
+                            height *= maxSize / width;
+                            width = maxSize;
+                        }
+                    } else {
+                        if (height > maxSize) {
+                            width *= maxSize / height;
+                            height = maxSize;
+                        }
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    callback(canvas.toDataURL('image/jpeg', 0.7)); // Compress to jpeg with 70% quality
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
         function setupPasteHandler(elementId) {
             const div = document.getElementById(elementId);
             if (!div) return;
@@ -247,10 +279,10 @@
                     if (items[i].type.indexOf("image") !== -1) {
                         hasImage = true;
                         const blob = items[i].getAsFile();
-                        const reader = new FileReader();
-                        reader.onload = function(event) {
+                        
+                        resizeImage(blob, 800, (resizedDataUrl) => {
                             const img = document.createElement('img');
-                            img.src = event.target.result;
+                            img.src = resizedDataUrl;
                             img.style.maxWidth = '100%'; img.style.maxHeight = '300px'; img.style.borderRadius = '8px';
                             img.style.marginTop = '8px'; img.style.marginBottom = '8px'; img.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
                             const sel = window.getSelection();
@@ -261,8 +293,7 @@
                                     sel.removeAllRanges(); sel.addRange(range);
                                 } else { div.appendChild(img); }
                             } else { div.appendChild(img); }
-                        };
-                        reader.readAsDataURL(blob);
+                        });
                     }
                 }
                 if (hasImage) e.preventDefault(); 
@@ -278,50 +309,106 @@
 
         async function initFirebase() {
             if (db) return;
-            if(typeof window.fbInitApp === 'undefined') return; 
             try {
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' && __firebase_config ? __firebase_config : '{}');
-                const app = window.fbInitApp(firebaseConfig);
-                auth = window.fbGetAuth(app);
-                db = window.fbGetFirestore(app);
-
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await window.fbSignInToken(auth, __initial_auth_token);
-                } else {
-                    await window.fbSignInAnon(auth);
+                const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+                if (!configStr || configStr === '{}') {
+                    throw new Error("Môi trường hiện tại không có kết nối Cloud. Vui lòng sử dụng tính năng Backup/Restore Offline bên dưới.");
                 }
-            } catch(e) { console.error("Lỗi kết nối Server", e); }
+                const firebaseConfig = JSON.parse(configStr);
+
+                const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+                const { getAuth, signInAnonymously, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                const { getFirestore } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (token) {
+                    await signInWithCustomToken(auth, token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch(e) { 
+                console.error("Lỗi khởi tạo Firebase:", e);
+                throw e;
+            }
         }
+
+        // Helper function to handle large state serialization for Firebase
+        function prepareStateForFirebase() {
+            // Create a copy of state without large images to avoid 1MB limit
+            const stateCopy = JSON.parse(JSON.stringify(state));
+            
+            // Limit invoices
+            if (stateCopy.invoices) {
+                stateCopy.invoices = stateCopy.invoices.map(inv => {
+                    if(inv.dataUrl && inv.dataUrl.length > 50000) {
+                        return { ...inv, dataUrl: null, filename: inv.filename + " (Ảnh quá lớn, đã lược bỏ khi lưu Cloud)" };
+                    }
+                    return inv;
+                });
+            }
+
+            // Limit notes images
+            if (stateCopy.plans) {
+                stateCopy.plans.forEach(p => {
+                    if (p.notes && p.notes.length > 50000) {
+                        p.notes = p.notes.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh đã bị ẩn vì kích thước lớn]');
+                    }
+                });
+            }
+            if (stateCopy.actuals) {
+                stateCopy.actuals.forEach(a => {
+                    if (a.notes && a.notes.length > 50000) {
+                        a.notes = a.notes.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh đã bị ẩn vì kích thước lớn]');
+                    }
+                });
+            }
+            
+            return JSON.stringify(stateCopy);
+        }
+
 
         async function shareApp() {
             if(!checkAuth()) return;
             try {
-                showToast("Đang tạo link chia sẻ trực tuyến...", "info");
+                showToast("Đang xử lý dữ liệu và tạo link chia sẻ...", "info");
                 await initFirebase();
-                const user = auth.currentUser;
-                if (!user) throw new Error("Chưa kết nối máy chủ");
+                if (!auth || !auth.currentUser) throw new Error("Chưa kết nối máy chủ");
 
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                
                 const shareId = crypto.randomUUID();
-                const shareRef = window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', shareId);
-                await window.fbSetDoc(shareRef, { data: JSON.stringify(state), createdAt: new Date().toISOString() });
+                const shareRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', shareId);
+                
+                const dataString = prepareStateForFirebase();
+                if (new Blob([dataString]).size > 1000000) {
+                    showToast("Dữ liệu vẫn quá lớn sau khi tối ưu. Hãy xóa bớt hình ảnh và thử lại.", "error");
+                    return;
+                }
+
+                await setDoc(shareRef, { data: dataString, createdAt: new Date().toISOString() });
 
                 let base = window.location.href.split('?')[0];
                 let warningHtml = '';
                 if (base.startsWith('blob:') || base.includes('usercontent')) {
-                    base = "https://tên-miền-của-bạn.com/";
-                    warningHtml = '<span class="text-[11px] text-red-500 block mb-2 font-medium border-l-2 border-red-500 pl-2">Lưu ý: Bạn đang chạy trên giả lập Canvas, link sinh ra chỉ là minh họa. Tính năng này sẽ hoạt động thật khi bạn host file này lên Github Pages/Vercel.</span>';
+                    base = "https://your-domain.com/index.html";
+                    warningHtml = '<span class="text-[11px] text-red-500 block mb-2 font-medium border-l-2 border-red-500 pl-2">Lưu ý: Bạn đang chạy file trên bộ giả lập. Tính năng này sẽ cung cấp link thật khi bạn host file này lên mạng (VD: Github Pages).</span>';
                 }
                 const shareUrl = base + '?sharedId=' + shareId;
 
                 showConfirm(`
                     Đã lưu dữ liệu lên Cloud an toàn!<br>
+                    <span class="text-xs text-gray-500 block mt-1 mb-2">(Lưu ý: Các hình ảnh kích thước lớn có thể đã bị nén hoặc loại bỏ để đảm bảo giới hạn máy chủ)</span>
                     ${warningHtml}
                     Hãy copy đường link dưới đây để gửi cho thành viên khác (Họ sẽ vào web với quyền Khách - Chỉ xem):<br>
                     <input type="text" value="${shareUrl}" class="w-full p-2 border rounded bg-gray-50 text-sm mt-3 font-medium text-blue-600 outline-none focus:border-blue-500" readonly onclick="this.select(); document.execCommand('copy'); showToast('Đã copy link vào khay nhớ tạm!');">
                 `, () => {});
             } catch(e) {
                 console.error(e);
-                showToast("Dịch vụ tạo link tạm thời không khả dụng.", "error");
+                showToast(e.message || "Lỗi tạo link. Vui lòng kiểm tra kích thước ảnh.", "error");
             }
         }
 
@@ -330,15 +417,23 @@
             try {
                 showToast("Đang đồng bộ dữ liệu lên Đám mây...", "info");
                 await initFirebase();
-                const user = auth.currentUser;
-                if (!user) throw new Error("No auth");
+                if (!auth || !auth.currentUser) throw new Error("Chưa kết nối máy chủ");
 
-                const cacheRef = window.fbDoc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'latest');
-                await window.fbSetDoc(cacheRef, { data: JSON.stringify(state), updatedAt: new Date().toISOString() });
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+
+                const cacheRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'cache', 'latest');
+                
+                const dataString = prepareStateForFirebase();
+                 if (new Blob([dataString]).size > 1000000) {
+                    showToast("Lỗi: Dữ liệu quá lớn (>1MB). Hãy xóa bớt các hình ảnh đính kèm.", "error");
+                    return;
+                }
+
+                await setDoc(cacheRef, { data: dataString, updatedAt: new Date().toISOString() });
                 showToast("Đã đồng bộ lên Bộ nhớ đệm thành công!", "success");
             } catch(e) {
                 console.error(e);
-                showToast("Lỗi đồng bộ đám mây", "error");
+                showToast(e.message || "Lỗi đồng bộ đám mây", "error");
             }
         }
 
@@ -346,11 +441,12 @@
             try {
                 showToast("Đang tìm dữ liệu từ Đám mây...", "info");
                 await initFirebase();
-                const user = auth.currentUser;
-                if (!user) return;
+                if (!auth || !auth.currentUser) throw new Error("Chưa kết nối máy chủ");
 
-                const cacheRef = window.fbDoc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'latest');
-                const docSnap = await window.fbGetDoc(cacheRef);
+                const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+
+                const cacheRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'cache', 'latest');
+                const docSnap = await getDoc(cacheRef);
                 if (docSnap.exists()) {
                     state = JSON.parse(docSnap.data().data);
                     showToast("Đã tải dữ liệu cũ từ bộ nhớ đệm!", "success");
@@ -358,7 +454,10 @@
                 } else {
                     showToast("Chưa có bộ nhớ đệm nào được lưu.", "info");
                 }
-            } catch(e) { console.error(e); }
+            } catch(e) { 
+                console.error(e); 
+                showToast(e.message || "Không thể tải bộ nhớ đệm", "error");
+            }
         }
 
         async function checkSharedLink() {
@@ -368,8 +467,11 @@
                 try {
                     showToast("Đang kết nối để tải dữ liệu chia sẻ...", "info");
                     await initFirebase();
-                    const shareRef = window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', sharedId);
-                    const docSnap = await window.fbGetDoc(shareRef);
+                    
+                    const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                    
+                    const shareRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', sharedId);
+                    const docSnap = await getDoc(shareRef);
                     if (docSnap.exists()) {
                         state = JSON.parse(docSnap.data().data);
                         state.role = 'member';
@@ -378,13 +480,26 @@
                         renderTab();
                     } else {
                         showToast("Link chia sẻ không tồn tại hoặc đã hết hạn!", "error");
+                        renderTab();
                     }
                 } catch(e) {
                     console.error(e);
-                    showToast("Lỗi tải link chia sẻ", "error");
+                    showToast(e.message || "Lỗi tải link chia sẻ", "error");
+                    renderTab();
                 }
             } else {
-                setTimeout(() => { if(typeof window.fbInitApp !== 'undefined') loadFromCloudCache(); }, 800);
+                setTimeout(async () => { 
+                    try {
+                        const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+                        if (configStr && configStr !== '{}') {
+                            await loadFromCloudCache(); 
+                        } else {
+                            renderTab();
+                        }
+                    } catch(err) {
+                        renderTab();
+                    }
+                }, 500);
             }
         }
 
@@ -744,7 +859,7 @@
             showConfirm('Bạn có chắc chắn muốn xóa phương án này?', () => {
                 state.plans = state.plans.filter(p => p.id != id);
                 if (state.timeline) state.timeline.forEach(t => { if(t.planId == id) t.planId = null; });
-                showToast('Đã xóa phương án', 'success');
+                showToast('Đã xóa phương án thành công!', 'success');
                 renderTab();
             });
         }
@@ -833,8 +948,10 @@
                                 <span class="font-bold text-lg md:text-2xl">${formatMoney(plan.total)}</span>
                             </div>
                         </div>
+
                         ${routeHtml}
                         ${notesHtml}
+
                         <h4 class="font-bold text-gray-800 mb-2 md:mb-3 text-sm md:text-base"><i class="fa-solid fa-location-dot text-red-500 mr-2"></i>Bản đồ: ${searchQuery}</h4>
                         <div class="w-full h-40 md:h-48 bg-gray-200 rounded-xl overflow-hidden relative shadow-inner border border-gray-300">
                             <iframe width="100%" height="100%" frameborder="0" style="border:0" src="${embedUrl}" allowfullscreen></iframe>
@@ -850,74 +967,100 @@
             openModal(m);
         }
 
-        function toggleRouteSection() {
-            const catId = document.getElementById('inpCatId').value;
-            const routeSec = document.getElementById('routeSection');
-            if (catId == '3') { routeSec.classList.remove('hidden'); renderRouteInputs(); } 
-            else { routeSec.classList.add('hidden'); }
-        }
-
-        function renderRouteInputs() {
-            const catId = document.getElementById('inpCatId').value;
-            if(catId != '3') return;
-            const count = Math.max(1, parseInt(document.getElementById('inpQty').value) || 1);
-            const container = document.getElementById('routeInputsContainer');
+        window.openAddPlanModal = function() {
+            if(!checkAuth()) return;
+            let catOptions = CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             
-            let existingRoutes = [];
-            for(let i=1; i<=container.children.length; i++) {
-                existingRoutes.push({
-                    from: document.getElementById(`routeFrom_${i}`)?.value || '',
-                    to: document.getElementById(`routeTo_${i}`)?.value || '',
-                    price: parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0
-                });
-            }
-            let html = '';
-            for(let i=1; i<=count; i++) {
-                const fromVal = existingRoutes[i-1]?.from || '';
-                const toVal = existingRoutes[i-1]?.to || '';
-                const priceVal = existingRoutes[i-1]?.price || '';
-                html += `
-                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 items-start sm:items-center mb-2 bg-white p-2 rounded border border-blue-50">
-                        <span class="text-xs font-bold text-blue-700 w-full sm:w-4 hidden sm:block">${i}.</span>
-                        <div class="flex w-full space-x-2">
-                            <input type="text" id="routeFrom_${i}" value="${fromVal}" placeholder="Từ" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
-                            <i class="fa-solid fa-arrow-right text-blue-400 text-xs mt-3"></i>
-                            <input type="text" id="routeTo_${i}" value="${toVal}" placeholder="Đến" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
-                            <input type="number" id="routePrice_${i}" value="${priceVal}" oninput="calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
+            const m = `
+                <div class="p-4 md:p-6 max-h-[85vh] flex flex-col">
+                    <h3 class="text-lg md:text-xl font-bold mb-4 sticky top-0 bg-white z-10 pb-2 border-b">Thêm phương án dự toán</h3>
+                    <div class="space-y-4 overflow-y-auto flex-1 pr-1">
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Hạng mục</label>
+                            <select id="inpCatId" onchange="toggleRouteSection()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                                ${catOptions}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Mô tả phương án</label>
+                            <input type="text" id="inpDesc" placeholder="VD: Khách sạn A (3 đêm)" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <div class="w-full sm:w-1/3">
+                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Loại tiền</label>
+                                <select id="inpCurrency" onchange="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                                    <option value="VND">VNĐ</option>
+                                    <option value="SGD">SGD (Đô Sing)</option>
+                                </select>
+                            </div>
+                            <div class="w-full sm:w-1/3">
+                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Đơn giá</label>
+                                <input type="number" id="inpUnit" oninput="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                            </div>
+                            <div class="w-full sm:w-1/3">
+                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Số lượng (Số chặng)</label>
+                                <input type="number" id="inpQty" value="1" oninput="calcTotal(); renderRouteInputs();" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                            </div>
+                        </div>
+
+                        <div id="routeSection" class="hidden bg-blue-50 p-3 md:p-4 rounded-xl border border-blue-100">
+                            <label class="block text-xs md:text-sm font-bold text-blue-800 mb-2"><i class="fa-solid fa-map-location-dot mr-1"></i>Chi tiết lộ trình di chuyển</label>
+                            <div id="routeInputsContainer" class="space-y-2 max-h-[150px] md:max-h-40 overflow-y-auto pr-1 md:pr-2 table-scroll-container">
+                                <!-- Injected via JS -->
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Vị trí Map (Tùy chọn)</label>
+                            <input type="text" id="inpMapLoc" placeholder="VD: Sân bay quốc tế Changi..." class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán ảnh)</span></label>
+                            <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 bg-white outline-none"></div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
+                            <input type="text" id="inpTotal" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
                         </div>
                     </div>
-                `;
-            }
-            container.innerHTML = html;
-            setTimeout(calcTotalFromRoutes, 50);
+                    <div class="mt-4 md:mt-6 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white z-10">
+                        <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
+                        <button type="button" onclick="saveNewPlan()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base">Thêm vào danh sách</button>
+                    </div>
+                </div>
+            `;
+            openModal(m);
+            
+            setTimeout(() => setupPasteHandler('inpPlanNotes'), 50);
         }
 
-        function calcTotalFromRoutes() {
-            if(document.getElementById('inpCatId').value != '3') return;
-            const count = parseInt(document.getElementById('inpQty').value) || 0;
-            let totalUnitStr = 0;
-            for(let i=1; i<=count; i++) totalUnitStr += (parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0);
-            const unitInput = document.getElementById('inpUnit');
-            if(unitInput) { unitInput.value = totalUnitStr; calcTotal(); }
-        }
-
-        function calcTotal() {
-            const catId = document.getElementById('inpCatId').value;
-            const u = parseFloat(document.getElementById('inpUnit').value) || 0;
-            const curr = document.getElementById('inpCurrency').value;
-            const rate = state.trip.exchangeRate || 18500;
-            const vndUnit = curr === 'SGD' ? u * rate : u;
-            let totalVnd = (catId == '3') ? vndUnit : vndUnit * (parseFloat(document.getElementById('inpQty').value) || 0);
-            document.getElementById('inpTotal').value = formatMoney(totalVnd);
-        }
-
-        function openEditPlanModal(id) {
+        window.openEditPlanModal = function(id) {
             if(!checkAuth()) return;
             const plan = state.plans.find(p => p.id == id);
             if(!plan) return;
 
             let catOptions = CATEGORIES.map(c => `<option value="${c.id}" ${c.id == plan.catId ? 'selected' : ''}>${c.name}</option>`).join('');
             
+            let initialRoutesHtml = '';
+            if (plan.catId === 3 && plan.routes && plan.routes.length > 0) {
+                plan.routes.forEach((r, idx) => {
+                    let i = idx + 1;
+                    initialRoutesHtml += `
+                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 items-start sm:items-center mb-2 bg-white p-2 rounded border border-blue-50">
+                            <span class="text-xs font-bold text-blue-700 w-full sm:w-4 hidden sm:block">${i}.</span>
+                            <div class="flex w-full space-x-2">
+                                <input type="text" id="routeFrom_${i}" value="${r.from || ''}" placeholder="Từ" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
+                                <i class="fa-solid fa-arrow-right text-blue-400 text-xs mt-3"></i>
+                                <input type="text" id="routeTo_${i}" value="${r.to || ''}" placeholder="Đến" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
+                                <input type="number" id="routePrice_${i}" value="${r.price || 0}" oninput="calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
             const mapLocVal = plan.mapLocation || '';
             const notesVal = plan.notes || '';
 
@@ -952,18 +1095,24 @@
                                 <input type="number" id="inpQty" value="${plan.qty}" oninput="calcTotal(); renderRouteInputs();" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
                             </div>
                         </div>
+
                         <div id="routeSection" class="${plan.catId === 3 ? '' : 'hidden'} bg-blue-50 p-3 md:p-4 rounded-xl border border-blue-100">
                             <label class="block text-xs md:text-sm font-bold text-blue-800 mb-2"><i class="fa-solid fa-map-location-dot mr-1"></i>Chi tiết lộ trình</label>
-                            <div id="routeInputsContainer" class="space-y-2 max-h-[150px] md:max-h-40 overflow-y-auto pr-1 md:pr-2 table-scroll-container"></div>
+                            <div id="routeInputsContainer" class="space-y-2 max-h-[150px] md:max-h-40 overflow-y-auto pr-1 md:pr-2 table-scroll-container">
+                                ${initialRoutesHtml}
+                            </div>
                         </div>
+
                         <div>
                             <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Vị trí Map (Tùy chọn)</label>
                             <input type="text" id="inpMapLoc" value="${mapLocVal}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
                         </div>
+
                         <div>
                             <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán)</span></label>
                             <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 bg-white outline-none">${notesVal}</div>
                         </div>
+
                         <div>
                             <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
                             <input type="text" id="inpTotal" value="${formatMoney(plan.total)}" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
@@ -976,113 +1125,75 @@
                 </div>
             `;
             openModal(m);
+
             setTimeout(() => {
                 setupPasteHandler('inpPlanNotes');
                 if (plan.catId === 3) renderRouteInputs();
             }, 50);
         }
 
-        function updatePlan(id) {
-            const plan = state.plans.find(p => p.id == id);
-            if(!plan) return;
+        window.toggleRouteSection = function() {
+            const catId = document.getElementById('inpCatId').value;
+            const routeSec = document.getElementById('routeSection');
+            if (catId == '3') { routeSec.classList.remove('hidden'); renderRouteInputs(); } 
+            else { routeSec.classList.add('hidden'); }
+        };
 
-            const desc = document.getElementById('inpDesc').value;
-            const currency = document.getElementById('inpCurrency').value;
-            const originalUnit = parseFloat(document.getElementById('inpUnit').value) || 0;
-            const qty = parseFloat(document.getElementById('inpQty').value) || 0;
-            const mapLocation = document.getElementById('inpMapLoc').value.trim();
-            const notes = document.getElementById('inpPlanNotes').innerHTML;
+        window.renderRouteInputs = function() {
+            const catId = document.getElementById('inpCatId').value;
+            if(catId != '3') return;
+            const count = Math.max(1, parseInt(document.getElementById('inpQty').value) || 1);
+            const container = document.getElementById('routeInputsContainer');
             
-            if(!desc || originalUnit <= 0) { showToast("Dữ liệu không hợp lệ!", "error"); return; }
-
-            const rate = state.trip.exchangeRate || 18500;
-            const unit = currency === 'SGD' ? originalUnit * rate : originalUnit;
-
-            let routes = [];
-            if (plan.catId === 3) {
-                for(let i=1; i<=qty; i++) {
-                    const from = document.getElementById(`routeFrom_${i}`)?.value || '';
-                    const to = document.getElementById(`routeTo_${i}`)?.value || '';
-                    const price = parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0;
-                    if (from || to) routes.push({ from, to, price });
-                }
+            let existingRoutes = [];
+            for(let i=1; i<=container.children.length; i++) {
+                existingRoutes.push({
+                    from: document.getElementById(`routeFrom_${i}`)?.value || '',
+                    to: document.getElementById(`routeTo_${i}`)?.value || '',
+                    price: parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0
+                });
             }
-            
-            plan.desc = desc; plan.currency = currency; plan.originalUnit = originalUnit;
-            plan.unit = unit; plan.qty = qty; plan.routes = routes;
-            plan.mapLocation = mapLocation; plan.notes = notes;
-            plan.total = (plan.catId === 3) ? unit : unit * qty;
-
-            showToast('Cập nhật thành công!'); renderTab(); viewPlanDetails(id);
-        }
-
-        function openAddPlanModal() {
-            if(!checkAuth()) return;
-            let catOptions = CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            
-            const m = `
-                <div class="p-4 md:p-6 max-h-[85vh] flex flex-col">
-                    <h3 class="text-lg md:text-xl font-bold mb-4 sticky top-0 bg-white z-10 pb-2 border-b">Thêm phương án dự toán</h3>
-                    <div class="space-y-4 overflow-y-auto flex-1 pr-1">
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Hạng mục</label>
-                            <select id="inpCatId" onchange="toggleRouteSection()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                                ${catOptions}
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Mô tả phương án</label>
-                            <input type="text" id="inpDesc" placeholder="VD: Khách sạn A (3 đêm)" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                        </div>
-                        <div class="flex flex-col sm:flex-row gap-3">
-                            <div class="w-full sm:w-1/3">
-                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Loại tiền</label>
-                                <select id="inpCurrency" onchange="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                                    <option value="VND">VNĐ</option>
-                                    <option value="SGD">SGD (Đô Sing)</option>
-                                </select>
-                            </div>
-                            <div class="w-full sm:w-1/3">
-                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Đơn giá</label>
-                                <input type="number" id="inpUnit" oninput="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                            </div>
-                            <div class="w-full sm:w-1/3">
-                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Số lượng</label>
-                                <input type="number" id="inpQty" value="1" oninput="calcTotal(); renderRouteInputs();" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                            </div>
-                        </div>
-
-                        <div id="routeSection" class="hidden bg-blue-50 p-3 md:p-4 rounded-xl border border-blue-100">
-                            <label class="block text-xs md:text-sm font-bold text-blue-800 mb-2"><i class="fa-solid fa-map-location-dot mr-1"></i>Chi tiết lộ trình di chuyển</label>
-                            <div id="routeInputsContainer" class="space-y-2 max-h-[150px] md:max-h-40 overflow-y-auto pr-1 md:pr-2 table-scroll-container"></div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Vị trí Map (Tùy chọn)</label>
-                            <input type="text" id="inpMapLoc" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                        </div>
-
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán ảnh)</span></label>
-                            <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 bg-white outline-none"></div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
-                            <input type="text" id="inpTotal" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
+            let html = '';
+            for(let i=1; i<=count; i++) {
+                const fromVal = existingRoutes[i-1]?.from || '';
+                const toVal = existingRoutes[i-1]?.to || '';
+                const priceVal = existingRoutes[i-1]?.price || '';
+                html += `
+                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 items-start sm:items-center mb-2 bg-white p-2 rounded border border-blue-50">
+                        <span class="text-xs font-bold text-blue-700 w-full sm:w-4 hidden sm:block">${i}.</span>
+                        <div class="flex w-full space-x-2">
+                            <input type="text" id="routeFrom_${i}" value="${fromVal}" placeholder="Từ" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
+                            <i class="fa-solid fa-arrow-right text-blue-400 text-xs mt-3"></i>
+                            <input type="text" id="routeTo_${i}" value="${toVal}" placeholder="Đến" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
+                            <input type="number" id="routePrice_${i}" value="${priceVal}" oninput="calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
                         </div>
                     </div>
-                    <div class="mt-4 md:mt-6 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white z-10">
-                        <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
-                        <button type="button" onclick="saveNewPlan()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base">Lưu</button>
-                    </div>
-                </div>
-            `;
-            openModal(m);
-            setTimeout(() => setupPasteHandler('inpPlanNotes'), 50);
-        }
+                `;
+            }
+            container.innerHTML = html;
+            setTimeout(calcTotalFromRoutes, 50);
+        };
 
-        function saveNewPlan() {
+        window.calcTotalFromRoutes = function() {
+            if(document.getElementById('inpCatId').value != '3') return;
+            const count = parseInt(document.getElementById('inpQty').value) || 0;
+            let totalUnitStr = 0;
+            for(let i=1; i<=count; i++) totalUnitStr += (parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0);
+            const unitInput = document.getElementById('inpUnit');
+            if(unitInput) { unitInput.value = totalUnitStr; calcTotal(); }
+        };
+
+        window.calcTotal = function() {
+            const catId = document.getElementById('inpCatId').value;
+            const u = parseFloat(document.getElementById('inpUnit').value) || 0;
+            const curr = document.getElementById('inpCurrency').value;
+            const rate = state.trip.exchangeRate || 18500;
+            const vndUnit = curr === 'SGD' ? u * rate : u;
+            let totalVnd = (catId == '3') ? vndUnit : vndUnit * (parseFloat(document.getElementById('inpQty').value) || 0);
+            document.getElementById('inpTotal').value = formatMoney(totalVnd);
+        };
+
+        window.saveNewPlan = function() {
             const catId = parseInt(document.getElementById('inpCatId').value);
             const desc = document.getElementById('inpDesc').value;
             const currency = document.getElementById('inpCurrency').value;
@@ -1115,100 +1226,7 @@
             });
 
             closeModal(); showToast('Đã thêm thành công'); renderTab();
-        }
-
-        function promptSavePlanList() {
-            if(!checkAuth()) return;
-            const selectedPlans = state.plans.filter(p => p.selected);
-            if (selectedPlans.length === 0) { showToast("Vui lòng tích chọn ít nhất 1 phương án!", "error"); return; }
-            const total = selectedPlans.reduce((sum, p) => sum + p.total, 0);
-
-            const m = `
-                <div class="p-4 md:p-6">
-                    <h3 class="text-lg md:text-xl font-bold mb-4 text-blue-800">Lưu thành Kịch bản / Danh sách</h3>
-                    <p class="text-sm text-gray-600 mb-4">Bạn đang chọn <strong>${selectedPlans.length}</strong> phương án. Tổng chi phí: <strong class="text-indigo-700">${formatMoney(total)}</strong>.</p>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tên Kịch bản</label>
-                            <input type="text" id="inpPlanListName" placeholder="VD: Phương án đi siêu tiết kiệm" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
-                        </div>
-                    </div>
-                    <div class="mt-6 flex justify-end space-x-3">
-                        <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
-                        <button type="button" onclick="savePlanList()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">Lưu</button>
-                    </div>
-                </div>`;
-            openModal(m);
-        }
-
-        function savePlanList() {
-            const name = document.getElementById('inpPlanListName').value.trim();
-            if (!name) return;
-            const selectedPlans = state.plans.filter(p => p.selected);
-            const totalCost = selectedPlans.reduce((sum, p) => sum + p.total, 0);
-            if (!state.planLists) state.planLists = [];
-            state.planLists.push({ id: Date.now(), name: name, planIds: selectedPlans.map(p => p.id), totalCost: totalCost, dateCreated: new Date().toISOString() });
-            closeModal(); showToast("Đã lưu thành Kịch bản mới!", "success"); renderTab();
-        }
-
-        function deletePlanList(id) {
-            if(!checkAuth()) return;
-            showConfirm("Xóa kịch bản / danh sách phương án này?", () => { state.planLists = state.planLists.filter(l => l.id != id); showToast("Đã xóa", "success"); renderTab(); });
-        }
-
-        function applyPlanList(id) {
-            if(!checkAuth()) return;
-            const list = state.planLists.find(l => l.id == id);
-            if (!list) return;
-            state.plans.forEach(p => p.selected = false);
-            state.plans.forEach(p => { if (list.planIds.includes(p.id)) p.selected = true; });
-            showToast(`Đã áp dụng cấu hình: ${list.name}`, 'success'); renderTab();
-        }
-
-        function viewPlanList(id) {
-            const list = state.planLists.find(l => l.id == id);
-            if (!list) return;
-            const plansInList = state.plans.filter(p => list.planIds.includes(p.id));
-            
-            const grouped = {};
-            plansInList.forEach(p => {
-                if(!grouped[p.catId]) grouped[p.catId] = [];
-                grouped[p.catId].push(p);
-            });
-
-            let tbody = '';
-            CATEGORIES.forEach(cat => {
-                if(grouped[cat.id]) {
-                    const catSubtotal = grouped[cat.id].reduce((sum, p) => sum + p.total, 0);
-                    tbody += `
-                        <tr class="bg-indigo-50 border-b border-indigo-100">
-                            <td colspan="2" class="py-2 px-3 text-xs md:text-sm font-bold text-indigo-800"><i class="fa-solid ${cat.icon} mr-2 w-4 text-center"></i>${cat.name.substring(3)}</td>
-                            <td class="py-2 px-3 text-xs md:text-sm text-right font-bold text-indigo-800 whitespace-nowrap">${formatMoney(catSubtotal)}</td>
-                        </tr>
-                    `;
-                    grouped[cat.id].forEach(p => {
-                        tbody += `
-                            <tr class="border-b border-gray-100 hover:bg-gray-50">
-                                <td class="py-2 px-3 text-xs md:text-sm text-gray-400 pl-4 md:pl-8 italic"></td>
-                                <td class="py-2 px-3 text-xs md:text-sm text-gray-800 break-words"><i class="fa-solid fa-angle-right text-gray-300 mr-2"></i>${p.desc}</td>
-                                <td class="py-2 px-3 text-xs md:text-sm text-right font-medium text-gray-700 whitespace-nowrap">${formatMoney(p.total)}</td>
-                            </tr>
-                        `;
-                    });
-                }
-            });
-
-            const m = `
-                <div class="p-4 md:p-6 max-h-[85vh] flex flex-col">
-                    <div class="flex justify-between items-start mb-4 sticky top-0 bg-white z-10 pb-2 border-b"><h3 class="text-base md:text-lg font-bold text-gray-800 pr-2"><i class="fa-solid fa-list-check text-blue-600 mr-2"></i>${list.name}</h3><button type="button" onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button></div>
-                    <div class="overflow-y-auto flex-1 table-scroll-container"><table class="w-full text-left min-w-[400px]">
-                        <thead class="text-xs text-gray-500 uppercase bg-gray-50"><tr><th class="py-2 px-3 w-1/4">Hạng mục</th><th class="py-2 px-3 w-1/2">Chi tiết</th><th class="py-2 px-3 text-right w-1/4">Chi phí</th></tr></thead>
-                        <tbody>${tbody}</tbody>
-                    </table></div>
-                    <div class="mt-4 pt-4 border-t flex justify-between items-center sticky bottom-0 bg-white z-10"><span class="text-gray-600 font-medium">Tổng chi phí:</span><span class="text-xl md:text-2xl font-bold text-indigo-700">${formatMoney(list.totalCost)}</span></div>
-                </div>`;
-            openModal(m);
-        }
+        };
 
         // ==========================================
         // 8. MODULE: ACTUAL EXPENSES
@@ -1293,7 +1311,7 @@
             container.innerHTML = html;
         }
 
-        function viewActualDetails(id) {
+        window.viewActualDetails = function(id) {
             const act = state.actuals.find(a => a.id == id);
             if (!act) return;
             const cat = CATEGORIES.find(c => c.id == act.catId);
@@ -1354,7 +1372,7 @@
             openModal(m);
         }
 
-        function openActualModal(id = null) {
+        window.openActualModal = function(id = null) {
             if(!checkAuth()) return;
             let catOptions = CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             
@@ -1411,7 +1429,7 @@
             setTimeout(() => setupPasteHandler('inpActNotes'), 50);
         }
 
-        function saveActual(id) {
+        window.saveActual = function(id) {
             const date = document.getElementById('inpActDate').value;
             const catId = parseInt(document.getElementById('inpActCatId').value);
             const desc = document.getElementById('inpActDesc').value.trim();
@@ -1434,7 +1452,7 @@
             if(id) viewActualDetails(id); else renderTab();
         }
 
-        function deleteActual(id) {
+        window.deleteActual = function(id) {
             if(!checkAuth()) return;
             showConfirm('Bạn có chắc chắn muốn xóa khoản chi này? Các hình ảnh gắn kèm cũng sẽ bị xóa.', () => {
                 state.actuals = state.actuals.filter(a => a.id != id);
@@ -1493,7 +1511,7 @@
             container.innerHTML = html;
         }
 
-        function openUploadModal(prefillExpId = null) {
+        window.openUploadModal = function(prefillExpId = null) {
             if(!checkAuth()) return;
             let actOptions = state.actuals.map(a => `<option value="${a.id}" ${prefillExpId == a.id ? 'selected' : ''}>${a.desc} - ${formatMoney(a.amount)}</option>`).join('');
             if(state.actuals.length === 0) { showToast("Vui lòng ghi nhận chi phí thực tế trước khi tải hóa đơn!", "error"); return; }
@@ -1520,25 +1538,24 @@
             openModal(m);
         }
 
-        function saveInvoice(prefillExpId) {
+        window.saveInvoice = function(prefillExpId) {
             const expId = parseInt(document.getElementById('inpInvExpId').value);
             const fileInput = document.getElementById('inpInvFile');
             if(fileInput.files.length === 0) { showToast("Vui lòng chọn 1 file ảnh!", "error"); return; }
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
+            // Giảm kích thước ảnh trước khi lưu để tiết kiệm dung lượng
+            resizeImage(fileInput.files[0], 1200, (resizedDataUrl) => {
                 state.invoices.push({
                     id: Date.now(), expenseId: expId, filename: fileInput.files[0].name,
-                    dataUrl: e.target.result, date: new Date().toISOString().split('T')[0]
+                    dataUrl: resizedDataUrl, date: new Date().toISOString().split('T')[0]
                 });
                 showToast('Đã upload hóa đơn thành công!'); 
                 if (prefillExpId) { viewActualDetails(prefillExpId); } 
                 else { closeModal(); renderTab(); }
-            };
-            reader.readAsDataURL(fileInput.files[0]);
+            });
         }
 
-        function deleteInvoice(id) {
+        window.deleteInvoice = function(id) {
             if(!checkAuth()) return;
             showConfirm('Xóa minh chứng hóa đơn này?', () => {
                 const inv = state.invoices.find(i=>i.id == id);
@@ -1680,7 +1697,7 @@
                 </div>`;
         }
 
-        function exportExcel() {
+        window.exportExcel = function() {
             try {
                 const wb = XLSX.utils.book_new();
                 const estData = [['BẢNG DỰ TOÁN', '', '', '', ''], ['Hành trình:', state.trip.origin + ' - ' + state.trip.destination, '', 'Ngân sách:', state.trip.budget], [], ['Hạng mục', 'Mô tả', 'Đơn giá', 'SL', 'Thành tiền']];
@@ -1693,7 +1710,7 @@
             } catch(e) { showToast("Lỗi xuất Excel!", "error"); }
         }
 
-        function generateAndExportPDF() {
+        window.generateAndExportPDF = function() {
             showToast("Đang tạo biểu đồ...", "info");
             generateChartImagesForReport((barChartImg, pieChartImg) => {
                 const area = document.getElementById('report-render-area');
@@ -1704,7 +1721,7 @@
             });
         }
 
-        function exportWord() {
+        window.exportWord = function() {
             generateChartImagesForReport((barChartImg, pieChartImg) => {
                 const htmlContent = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Word</title><style>body{font-family:'Times New Roman';} table{border-collapse:collapse; width:100%;} th,td{border:1px solid windowtext; padding:5px;} .page-break{mso-special-character:line-break; page-break-before:always;}</style></head><body>${buildReportHTML(barChartImg, pieChartImg)}</body></html>`;
                 const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
@@ -1745,13 +1762,13 @@
             container.innerHTML = html;
         }
 
-        function backupData() {
+        window.backupData = function() {
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
             const node = document.createElement('a'); node.setAttribute("href", dataStr); node.setAttribute("download", `NtuCostManager_Backup_${new Date().toISOString().split('T')[0]}.json`);
             document.body.appendChild(node); node.click(); node.remove(); showToast("Đã tải file Backup");
         }
 
-        function restoreData() {
+        window.restoreData = function() {
             if(!checkAuth()) return;
             const fileInput = document.getElementById('inpRestore');
             if(fileInput.files.length === 0) { showToast("Chọn file backup (.json)", "error"); return; }
