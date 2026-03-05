@@ -12,18 +12,21 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <!-- SheetJS (Excel Export) -->
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <!-- html2pdf (PDF Export) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
+    <!-- html2canvas (Image Export) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
     <!-- FontAwesome (Icons) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- FIREBASE MODULES -->
+    <!-- FIREBASE MODULES (Cho tính năng Tạo Link Chia Sẻ) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         window.fbInitApp = initializeApp;
@@ -35,6 +38,43 @@
         window.fbSetDoc = setDoc;
         window.fbGetDoc = getDoc;
     </script>
+
+    <!-- GOOGLE DRIVE API MODULES -->
+    <script>
+        var GOOGLE_CLIENT_ID = 'THAY_BANG_CLIENT_ID_CUA_BAN.apps.googleusercontent.com'; 
+        var GOOGLE_API_KEY = 'THAY_BANG_API_KEY_CUA_BAN'; 
+        
+        var gapiInited = false;
+        var gisInited = false;
+        var driveTokenClient = null;
+        var driveAccessToken = null;
+
+        function gapiLoaded() {
+            if (typeof gapi !== 'undefined') {
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({ apiKey: GOOGLE_API_KEY, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+                        gapiInited = true;
+                    } catch (err) { console.warn('Lỗi GAPI', err); }
+                });
+            }
+        }
+
+        function gisLoaded() {
+            if (typeof google !== 'undefined' && google.accounts) {
+                try {
+                    driveTokenClient = google.accounts.oauth2.initTokenClient({
+                        client_id: GOOGLE_CLIENT_ID,
+                        scope: 'https://www.googleapis.com/auth/drive.appdata', 
+                        callback: '', 
+                    });
+                    gisInited = true;
+                } catch(e) { console.warn('Lỗi GIS', e); }
+            }
+        }
+    </script>
+    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -63,7 +103,7 @@
 <body class="flex h-screen overflow-hidden text-gray-800">
 
     <!-- Sidebar Overlay -->
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden md:hidden" onclick="toggleSidebar()"></div>
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden md:hidden" onclick="window.toggleSidebar()"></div>
 
     <!-- Sidebar -->
     <aside id="sidebar" class="fixed md:static inset-y-0 left-0 transform -translate-x-full md:translate-x-0 w-64 bg-white shadow-xl flex flex-col z-30 flex-shrink-0 transition-transform duration-300 ease-in-out">
@@ -72,7 +112,7 @@
                 <h1 class="text-xl font-bold text-indigo-700 leading-tight">NTU Bridge 2026</h1>
                 <p class="text-xs text-gray-500 mt-1">Cost Management System</p>
             </div>
-            <button class="md:hidden text-gray-500 hover:text-gray-700" onclick="toggleSidebar()"><i class="fa-solid fa-times text-xl"></i></button>
+            <button class="md:hidden text-gray-500 hover:text-gray-700" onclick="window.toggleSidebar()"><i class="fa-solid fa-times text-xl"></i></button>
         </div>
         
         <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
@@ -82,20 +122,21 @@
                 </div>
                 <div class="truncate">
                     <p class="text-sm font-semibold truncate" id="currentUserRole" title="Tấn Đạt đẹp trai - 64CNXD2">Tấn Đạt đẹp trai - 64CNXD2</p>
-                    <button onclick="toggleRole()" class="text-xs text-indigo-600 hover:underline">Đổi quyền</button>
+                    <button onclick="window.toggleRole()" class="text-xs text-indigo-600 hover:underline">Đổi quyền</button>
                 </div>
             </div>
         </div>
 
         <nav class="flex-1 overflow-y-auto py-4">
             <ul class="space-y-1">
-                <li><a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-link block px-6 py-3 tab-active"><i class="fa-solid fa-chart-pie w-6"></i> Dashboard</a></li>
-                <li><a href="#" onclick="switchTab('timeline')" id="nav-timeline" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-calendar-days w-6"></i> Lịch trình chuyến đi</a></li>
-                <li><a href="#" onclick="switchTab('planning')" id="nav-planning" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-lightbulb w-6"></i> Lập phương án</a></li>
-                <li><a href="#" onclick="switchTab('actual')" id="nav-actual" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-money-bill-wave w-6"></i> Chi phí thực tế</a></li>
-                <li><a href="#" onclick="switchTab('invoices')" id="nav-invoices" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-file-invoice w-6"></i> Quản lý Hóa đơn</a></li>
-                <li><a href="#" onclick="switchTab('export')" id="nav-export" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-file-export w-6"></i> Báo cáo & Xuất file</a></li>
-                <li><a href="#" onclick="switchTab('settings')" id="nav-settings" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-database w-6"></i> Quản lý Dữ liệu</a></li>
+                <li><a href="#" onclick="window.switchTab('dashboard')" id="nav-dashboard" class="nav-link block px-6 py-3 tab-active"><i class="fa-solid fa-chart-pie w-6"></i> Dashboard</a></li>
+                <li><a href="#" onclick="window.switchTab('members')" id="nav-members" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-users w-6"></i> Thành viên</a></li>
+                <li><a href="#" onclick="window.switchTab('timeline')" id="nav-timeline" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-calendar-days w-6"></i> Lịch trình chuyến đi</a></li>
+                <li><a href="#" onclick="window.switchTab('planning')" id="nav-planning" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-lightbulb w-6"></i> Lập phương án</a></li>
+                <li><a href="#" onclick="window.switchTab('actual')" id="nav-actual" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-money-bill-wave w-6"></i> Chi phí thực tế</a></li>
+                <li><a href="#" onclick="window.switchTab('invoices')" id="nav-invoices" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-file-invoice w-6"></i> Quản lý Hóa đơn</a></li>
+                <li><a href="#" onclick="window.switchTab('export')" id="nav-export" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-file-export w-6"></i> Báo cáo & Xuất file</a></li>
+                <li><a href="#" onclick="window.switchTab('settings')" id="nav-settings" class="nav-link block px-6 py-3 tab-inactive"><i class="fa-solid fa-share-nodes w-6"></i> Chia sẻ & Quản lý DL</a></li>
             </ul>
         </nav>
     </aside>
@@ -103,7 +144,7 @@
     <!-- Mobile Header -->
     <div class="md:hidden fixed top-0 w-full bg-indigo-700 text-white p-4 flex justify-between items-center z-10 shadow-md">
         <h1 class="text-lg font-bold">NTU Bridge 2026</h1>
-        <button onclick="toggleSidebar()" class="text-white focus:outline-none p-1"><i class="fa-solid fa-bars text-xl"></i></button>
+        <button onclick="window.toggleSidebar()" class="text-white focus:outline-none p-1"><i class="fa-solid fa-bars text-xl"></i></button>
     </div>
 
     <!-- Main Content -->
@@ -118,12 +159,14 @@
     </div>
 
     <div id="report-render-area" class="hidden bg-white text-black" style="width: 210mm; padding: 20mm; margin: 0 auto; box-sizing: border-box; background: white;"></div>
+    <div id="timeline-pdf-area" class="hidden bg-white text-black" style="width: 210mm; padding: 20mm; margin: 0 auto; box-sizing: border-box; background: white;"></div>
+    
     <canvas id="hiddenReportChart" width="800" height="400" style="display:none;"></canvas>
     <canvas id="hiddenReportPieChart" width="400" height="400" style="display:none;"></canvas>
 
     <script>
         // ==========================================
-        // 1. STATE MANAGEMENT (IN-MEMORY)
+        // 2. STATE MANAGEMENT (IN-MEMORY)
         // ==========================================
         const CATEGORIES = [
             { id: 1, name: '✈️ Vé máy bay', icon: 'fa-plane' },
@@ -137,6 +180,10 @@
         let state = {
             role: 'admin', 
             trip: { origin: 'Nha Trang (CXR)', destination: 'NTU, Singapore (SIN)', members: 5, budget: 50000000, exchangeRate: 18500 },
+            members: [
+                { id: 1, name: 'Tấn Đạt', role: 'Trưởng đoàn', phone: '0123.456.789', email: 'dat@ntu.edu.vn', dob: '2000-01-01', passport: 'C1234567', passportExpiry: '2030-01-01', pob: 'Khánh Hòa, Việt Nam', note: '64CNXD2' },
+                { id: 2, name: 'Nguyễn Văn A', role: 'Thành viên', phone: '0987.654.321', email: 'nva@ntu.edu.vn', dob: '2001-05-15', passport: '', passportExpiry: '', pob: 'TP.HCM, Việt Nam', note: 'Đang làm lại hộ chiếu' }
+            ],
             plans: [
                 { id: 1, catId: 1, desc: 'Vietjet Air bay thẳng', unit: 3500000, qty: 5, total: 17500000, selected: false, currency: 'VND', originalUnit: 3500000, mapLocation: 'Changi Airport', notes: '' },
                 { id: 2, catId: 1, desc: 'Scoot (SGN-SIN) + Xe giường nằm', unit: 2800000, qty: 5, total: 14000000, selected: true, currency: 'VND', originalUnit: 2800000, mapLocation: 'Sân bay Tân Sơn Nhất', notes: '' },
@@ -153,28 +200,33 @@
                 { id: 1, date: '2026-03-10', time: '08:00', title: 'Tập trung xuất phát', location: 'ĐH Nha Trang', notes: 'Kiểm tra hộ chiếu', planId: null },
                 { id: 2, date: '2026-03-10', time: '13:00', title: 'Bay đi Singapore', location: 'Sân bay TSN', notes: 'Có mặt trước 2 tiếng', planId: 2 }
             ],
+            actualTimeline: [
+                { id: 1, date: '2026-03-10', time: '08:30', title: 'Thực tế: Tập trung trễ 30p', location: 'ĐH Nha Trang', notes: 'Đợi thành viên A quên đồ', image: '' }
+            ],
             invoices: [
                 { id: 1, expenseId: 1, filename: 've_scoot_pdf.png', dataUrl: null, date: '2026-02-15' }
             ]
         };
 
         let currentTab = 'dashboard';
+        window.currentTimelineTab = 'planned'; // 'planned' or 'actual'
         let charts = {}; 
 
         // ==========================================
-        // 2. CORE UTILITIES
+        // 3. CORE UTILITIES
         // ==========================================
-        const formatMoney = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-        const formatSGD = (amount) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(amount);
+        window.formatMoney = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+        window.formatSGD = (amount) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(amount);
         
-        const formatDate = (dStr) => {
+        window.formatDate = (dStr) => {
             if (!dStr) return '';
             const d = new Date(dStr);
             return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
         };
 
-        const showToast = (message, type = 'success') => {
+        window.showToast = (message, type = 'success') => {
             const container = document.getElementById('toast-container');
+            if(!container) return;
             const toast = document.createElement('div');
             const color = type === 'success' ? 'bg-green-500' : (type === 'error' ? 'bg-red-500' : 'bg-blue-500');
             toast.className = `${color} text-white px-4 md:px-6 py-3 rounded-lg shadow-lg flex items-center space-x-3 toast-enter pointer-events-auto text-sm md:text-base`;
@@ -188,88 +240,81 @@
             }, 3000);
         };
 
-        const openModal = (htmlContent) => {
+        window.openModal = (htmlContent) => {
             const modalOverlay = document.getElementById('modal-overlay');
             const modalContent = document.getElementById('modal-content');
+            if(!modalOverlay || !modalContent) return;
             modalContent.innerHTML = htmlContent;
             modalOverlay.classList.remove('hidden');
         };
 
-        const closeModal = () => {
-            document.getElementById('modal-overlay').classList.add('hidden');
+        window.closeModal = () => {
+            const modalOverlay = document.getElementById('modal-overlay');
+            if(modalOverlay) modalOverlay.classList.add('hidden');
         };
 
-        const showConfirm = (message, onConfirmCallback) => {
+        window.showConfirm = (message, onConfirmCallback) => {
             const m = `
                 <div class="p-4 md:p-6">
                     <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800 flex items-center"><i class="fa-solid fa-triangle-exclamation text-red-500 mr-2"></i> Xác nhận</h3>
                     <p class="text-sm md:text-base text-gray-600 mb-6">${message}</p>
                     <div class="flex justify-end space-x-3">
-                        <button onclick="closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
+                        <button onclick="window.closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
                         <button id="btnConfirmAction" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium text-sm">Đồng ý</button>
                     </div>
                 </div>
             `;
-            openModal(m);
+            window.openModal(m);
             setTimeout(() => {
-                document.getElementById('btnConfirmAction').onclick = () => { onConfirmCallback(); closeModal(); };
+                const btn = document.getElementById('btnConfirmAction');
+                if(btn) btn.onclick = () => { onConfirmCallback(); window.closeModal(); };
             }, 50);
         };
 
-        const toggleRole = () => {
+        window.toggleRole = () => {
             state.role = state.role === 'admin' ? 'member' : 'admin';
-            document.getElementById('currentUserRole').innerText = state.role === 'admin' ? 'Tấn Đạt đẹp trai - 64CNXD2' : 'Khách (Chỉ xem)';
-            showToast(`Đã chuyển sang quyền: ${state.role.toUpperCase()}`, 'info');
-            renderTab();
+            const roleEl = document.getElementById('currentUserRole');
+            if(roleEl) roleEl.innerText = state.role === 'admin' ? 'Tấn Đạt đẹp trai - 64CNXD2' : 'Khách (Chỉ xem)';
+            window.showToast(`Đã chuyển sang quyền: ${state.role.toUpperCase()}`, 'info');
+            window.renderTab();
         };
 
-        const checkAuth = () => {
+        window.checkAuth = () => {
             if (state.role !== 'admin') {
-                showToast('Chỉ Admin mới có quyền thực hiện thao tác này!', 'error'); return false;
+                window.showToast('Chỉ Admin mới có quyền thực hiện thao tác này!', 'error'); return false;
             }
             return true;
         };
 
-        function toggleSidebar() {
+        window.toggleSidebar = function() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
-            sidebar.classList.toggle('-translate-x-full');
-            overlay.classList.toggle('hidden');
+            if(sidebar && overlay) {
+                sidebar.classList.toggle('-translate-x-full');
+                overlay.classList.toggle('hidden');
+            }
         }
 
-        // Helper function to resize large images to base64 to avoid Firebase 1MB limits
-        function resizeImage(file, maxSize, callback) {
+        window.resizeImage = function(file, maxSize, callback) {
             const reader = new FileReader();
             reader.onload = function (e) {
                 const img = new Image();
                 img.onload = function () {
                     const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-
-                    if (width > height) {
-                        if (width > maxSize) {
-                            height *= maxSize / width;
-                            width = maxSize;
-                        }
-                    } else {
-                        if (height > maxSize) {
-                            width *= maxSize / height;
-                            height = maxSize;
-                        }
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
+                    let width = img.width; let height = img.height;
+                    if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
+                    else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+                    canvas.width = width; canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    callback(canvas.toDataURL('image/jpeg', 0.7)); // Compress to jpeg with 70% quality
+                    callback(canvas.toDataURL('image/jpeg', 0.7)); 
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         }
 
-        function setupPasteHandler(elementId) {
+        window.setupPasteHandler = function(elementId) {
             const div = document.getElementById(elementId);
             if (!div) return;
             div.addEventListener('paste', function(e) {
@@ -279,8 +324,7 @@
                     if (items[i].type.indexOf("image") !== -1) {
                         hasImage = true;
                         const blob = items[i].getAsFile();
-                        
-                        resizeImage(blob, 800, (resizedDataUrl) => {
+                        window.resizeImage(blob, 800, (resizedDataUrl) => {
                             const img = document.createElement('img');
                             img.src = resizedDataUrl;
                             img.style.maxWidth = '100%'; img.style.maxHeight = '300px'; img.style.borderRadius = '8px';
@@ -301,252 +345,420 @@
         }
 
         // ==========================================
-        // 3. FIREBASE CLOUD & SHARE LOGIC
+        // 4. FIREBASE CLOUD & SHARE LOGIC 
         // ==========================================
         let db = null;
         let auth = null;
         let appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        async function initFirebase() {
-            if (db) return;
+        window.initFirebase = async function() {
+            if (db) return true;
             try {
                 const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-                if (!configStr || configStr === '{}') {
-                    throw new Error("Môi trường hiện tại không có kết nối Cloud. Vui lòng sử dụng tính năng Backup/Restore Offline bên dưới.");
-                }
-                const firebaseConfig = JSON.parse(configStr);
-
-                const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
-                const { getAuth, signInAnonymously, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-                const { getFirestore } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                if (!configStr || configStr === '{}') return false; 
                 
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
+                const firebaseConfig = JSON.parse(configStr);
+                if (typeof window.fbInitApp === 'undefined') return false;
+
+                const app = window.fbInitApp(firebaseConfig);
+                auth = window.fbGetAuth(app);
+                db = window.fbGetFirestore(app);
 
                 const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (token) {
-                    await signInWithCustomToken(auth, token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch(e) { 
-                console.error("Lỗi khởi tạo Firebase:", e);
-                throw e;
-            }
+                if (token) await window.fbSignInToken(auth, token);
+                else await window.fbSignInAnon(auth);
+                return true;
+            } catch(e) { console.error(e); return false; }
         }
 
-        // Helper function to handle large state serialization for Firebase
-        function prepareStateForFirebase() {
-            // Create a copy of state without large images to avoid 1MB limit
+        window.prepareStateForCloud = function() {
             const stateCopy = JSON.parse(JSON.stringify(state));
-            
-            // Limit invoices
             if (stateCopy.invoices) {
                 stateCopy.invoices = stateCopy.invoices.map(inv => {
-                    if(inv.dataUrl && inv.dataUrl.length > 50000) {
-                        return { ...inv, dataUrl: null, filename: inv.filename + " (Ảnh quá lớn, đã lược bỏ khi lưu Cloud)" };
-                    }
+                    if(inv.dataUrl && inv.dataUrl.length > 100000) return { ...inv, dataUrl: null, filename: inv.filename + " (Ảnh đã ẩn để tiết kiệm dung lượng)" };
                     return inv;
                 });
             }
-
-            // Limit notes images
-            if (stateCopy.plans) {
-                stateCopy.plans.forEach(p => {
-                    if (p.notes && p.notes.length > 50000) {
-                        p.notes = p.notes.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh đã bị ẩn vì kích thước lớn]');
-                    }
+            const stripNotes = (items) => {
+                if(items) items.forEach(p => {
+                    if (p.notes && p.notes.length > 50000) p.notes = p.notes.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh lớn đã bị ẩn]');
+                    // Actual Timeline images stripping
+                    if (p.image && p.image.length > 50000) p.image = p.image.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh lớn đã bị ẩn]');
                 });
-            }
-            if (stateCopy.actuals) {
-                stateCopy.actuals.forEach(a => {
-                    if (a.notes && a.notes.length > 50000) {
-                        a.notes = a.notes.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh đã bị ẩn vì kích thước lớn]');
-                    }
-                });
-            }
-            
+            };
+            stripNotes(stateCopy.plans); stripNotes(stateCopy.actuals); stripNotes(stateCopy.actualTimeline);
             return JSON.stringify(stateCopy);
         }
 
-
-        async function shareApp() {
-            if(!checkAuth()) return;
-            try {
-                showToast("Đang xử lý dữ liệu và tạo link chia sẻ...", "info");
-                await initFirebase();
-                if (!auth || !auth.currentUser) throw new Error("Chưa kết nối máy chủ");
-
-                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-                
-                const shareId = crypto.randomUUID();
-                const shareRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', shareId);
-                
-                const dataString = prepareStateForFirebase();
-                if (new Blob([dataString]).size > 1000000) {
-                    showToast("Dữ liệu vẫn quá lớn sau khi tối ưu. Hãy xóa bớt hình ảnh và thử lại.", "error");
-                    return;
-                }
-
-                await setDoc(shareRef, { data: dataString, createdAt: new Date().toISOString() });
-
-                let base = window.location.href.split('?')[0];
-                let warningHtml = '';
-                if (base.startsWith('blob:') || base.includes('usercontent')) {
-                    base = "https://your-domain.com/index.html";
-                    warningHtml = '<span class="text-[11px] text-red-500 block mb-2 font-medium border-l-2 border-red-500 pl-2">Lưu ý: Bạn đang chạy file trên bộ giả lập. Tính năng này sẽ cung cấp link thật khi bạn host file này lên mạng (VD: Github Pages).</span>';
-                }
-                const shareUrl = base + '?sharedId=' + shareId;
-
-                showConfirm(`
-                    Đã lưu dữ liệu lên Cloud an toàn!<br>
-                    <span class="text-xs text-gray-500 block mt-1 mb-2">(Lưu ý: Các hình ảnh kích thước lớn có thể đã bị nén hoặc loại bỏ để đảm bảo giới hạn máy chủ)</span>
-                    ${warningHtml}
-                    Hãy copy đường link dưới đây để gửi cho thành viên khác (Họ sẽ vào web với quyền Khách - Chỉ xem):<br>
-                    <input type="text" value="${shareUrl}" class="w-full p-2 border rounded bg-gray-50 text-sm mt-3 font-medium text-blue-600 outline-none focus:border-blue-500" readonly onclick="this.select(); document.execCommand('copy'); showToast('Đã copy link vào khay nhớ tạm!');">
-                `, () => {});
-            } catch(e) {
-                console.error(e);
-                showToast(e.message || "Lỗi tạo link. Vui lòng kiểm tra kích thước ảnh.", "error");
-            }
-        }
-
-        async function saveToCloudCache() {
-            if(!checkAuth()) return;
-            try {
-                showToast("Đang đồng bộ dữ liệu lên Đám mây...", "info");
-                await initFirebase();
-                if (!auth || !auth.currentUser) throw new Error("Chưa kết nối máy chủ");
-
-                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-
-                const cacheRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'cache', 'latest');
-                
-                const dataString = prepareStateForFirebase();
-                 if (new Blob([dataString]).size > 1000000) {
-                    showToast("Lỗi: Dữ liệu quá lớn (>1MB). Hãy xóa bớt các hình ảnh đính kèm.", "error");
-                    return;
-                }
-
-                await setDoc(cacheRef, { data: dataString, updatedAt: new Date().toISOString() });
-                showToast("Đã đồng bộ lên Bộ nhớ đệm thành công!", "success");
-            } catch(e) {
-                console.error(e);
-                showToast(e.message || "Lỗi đồng bộ đám mây", "error");
-            }
-        }
-
-        async function loadFromCloudCache() {
-            try {
-                showToast("Đang tìm dữ liệu từ Đám mây...", "info");
-                await initFirebase();
-                if (!auth || !auth.currentUser) throw new Error("Chưa kết nối máy chủ");
-
-                const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-
-                const cacheRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'cache', 'latest');
-                const docSnap = await getDoc(cacheRef);
-                if (docSnap.exists()) {
-                    state = JSON.parse(docSnap.data().data);
-                    showToast("Đã tải dữ liệu cũ từ bộ nhớ đệm!", "success");
-                    renderTab();
-                } else {
-                    showToast("Chưa có bộ nhớ đệm nào được lưu.", "info");
-                }
-            } catch(e) { 
-                console.error(e); 
-                showToast(e.message || "Không thể tải bộ nhớ đệm", "error");
-            }
-        }
-
-        async function checkSharedLink() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const sharedId = urlParams.get('sharedId');
-            if (sharedId) {
-                try {
-                    showToast("Đang kết nối để tải dữ liệu chia sẻ...", "info");
-                    await initFirebase();
+        window.openShareModal = function() {
+            if(!window.checkAuth()) return;
+            const m = `
+                <div class="p-4 md:p-6">
+                    <h3 class="text-xl font-bold mb-4 text-indigo-800"><i class="fa-solid fa-share-nodes mr-2"></i>Tạo Link Chia Sẻ</h3>
+                    <p class="text-sm text-gray-600 mb-6">Chọn phiên bản dữ liệu bạn muốn chia sẻ cho đội thi:</p>
                     
-                    const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-                    
-                    const shareRef = doc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', sharedId);
-                    const docSnap = await getDoc(shareRef);
-                    if (docSnap.exists()) {
-                        state = JSON.parse(docSnap.data().data);
-                        state.role = 'member';
-                        document.getElementById('currentUserRole').innerText = 'Khách (Chỉ xem)';
-                        showToast("Tải dữ liệu thành công!", "success");
-                        renderTab();
-                    } else {
-                        showToast("Link chia sẻ không tồn tại hoặc đã hết hạn!", "error");
-                        renderTab();
-                    }
-                } catch(e) {
-                    console.error(e);
-                    showToast(e.message || "Lỗi tải link chia sẻ", "error");
-                    renderTab();
-                }
+                    <div class="space-y-4">
+                        <label class="flex items-start space-x-3 p-3 border rounded-xl hover:bg-gray-50 cursor-pointer transition">
+                            <input type="radio" name="shareOption" value="current" checked class="mt-1 w-4 h-4 text-indigo-600" onchange="window.toggleShareFileInput()">
+                            <div>
+                                <h4 class="font-bold text-gray-800">Chia sẻ Dữ liệu hiện tại</h4>
+                                <p class="text-xs text-gray-500 mt-1">Gửi toàn bộ thông tin, dự toán, lịch trình đang hiển thị trên màn hình của bạn.</p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start space-x-3 p-3 border rounded-xl hover:bg-gray-50 cursor-pointer transition">
+                            <input type="radio" name="shareOption" value="file" class="mt-1 w-4 h-4 text-indigo-600" onchange="window.toggleShareFileInput()">
+                            <div class="w-full">
+                                <h4 class="font-bold text-gray-800">Chia sẻ từ file Backup (.json)</h4>
+                                <p class="text-xs text-gray-500 mt-1 mb-2">Tải lên một kịch bản/bản sao lưu cũ mà bạn đã lưu trước đó.</p>
+                                <div id="shareFileInputWrapper" class="hidden">
+                                    <input type="file" id="inpShareFile" accept=".json" class="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-indigo-50 file:text-indigo-700">
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button type="button" onclick="window.closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
+                        <button type="button" onclick="window.executeShareApp()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm shadow-sm"><i class="fa-solid fa-link mr-1"></i> Tạo Link</button>
+                    </div>
+                </div>
+            `;
+            window.openModal(m);
+        }
+
+        window.toggleShareFileInput = function() {
+            const isFile = document.querySelector('input[name="shareOption"]:checked').value === 'file';
+            const wrapper = document.getElementById('shareFileInputWrapper');
+            if(isFile) wrapper.classList.remove('hidden');
+            else wrapper.classList.add('hidden');
+        }
+
+        window.executeShareApp = async function() {
+            const type = document.querySelector('input[name="shareOption"]:checked').value;
+            let dataStringToShare = '';
+
+            if (type === 'current') {
+                dataStringToShare = window.prepareStateForCloud();
+                await window.uploadAndGetLink(dataStringToShare);
             } else {
-                setTimeout(async () => { 
+                const fileInput = document.getElementById('inpShareFile');
+                if(!fileInput.files.length) {
+                    window.showToast("Vui lòng chọn 1 file .json!", "error");
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = async function(e) {
                     try {
-                        const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-                        if (configStr && configStr !== '{}') {
-                            await loadFromCloudCache(); 
-                        } else {
-                            renderTab();
+                        const parsed = JSON.parse(e.target.result);
+                        if (!parsed.trip || !parsed.plans) throw new Error("File không đúng định dạng");
+                        
+                        // Strip images just in case the uploaded file is too heavy
+                        if (parsed.invoices) {
+                            parsed.invoices = parsed.invoices.map(inv => {
+                                if(inv.dataUrl && inv.dataUrl.length > 100000) return { ...inv, dataUrl: null, filename: inv.filename + " (Ảnh ẩn)" };
+                                return inv;
+                            });
                         }
-                    } catch(err) {
-                        renderTab();
+                        const stripNotes = (items) => {
+                            if(items) items.forEach(p => {
+                                if (p.notes && p.notes.length > 50000) p.notes = p.notes.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh lớn đã bị ẩn]');
+                                if (p.image && p.image.length > 50000) p.image = p.image.replace(/<img[^>]*src="data:image[^>]*>/gi, '[Hình ảnh lớn đã bị ẩn]');
+                            });
+                        };
+                        stripNotes(parsed.plans); stripNotes(parsed.actuals); stripNotes(parsed.actualTimeline);
+
+                        dataStringToShare = JSON.stringify(parsed);
+                        await window.uploadAndGetLink(dataStringToShare);
+                    } catch(err) { window.showToast("Lỗi định dạng file JSON", "error"); }
+                };
+                reader.readAsText(fileInput.files[0]);
+            }
+        }
+
+        window.uploadAndGetLink = async function(dataString) {
+            window.showToast("Đang xử lý dữ liệu và tạo link chia sẻ...", "info");
+            const isFbReady = await window.initFirebase();
+            
+            if (isFbReady && auth && auth.currentUser && window.fbSetDoc && window.fbDoc) {
+                try {
+                    const shareId = crypto.randomUUID();
+                    const shareRef = window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'shared_trips', shareId);
+                    
+                    if (new Blob([dataString]).size > 1000000) { 
+                        window.showToast("Dữ liệu vẫn quá lớn (>1MB). Hãy xóa bớt hình ảnh.", "error"); 
+                        return; 
                     }
-                }, 500);
+
+                    await window.fbSetDoc(shareRef, { data: dataString, createdAt: new Date().toISOString() });
+                    let base = window.location.href.split('?')[0];
+                    if (base.startsWith('blob:') || base.includes('usercontent')) base = "https://your-domain.com/index.html";
+                    
+                    const shareUrl = base + '?sharedId=' + shareId;
+                    window.showConfirm(`
+                        Đã tạo link dựa trên cấu hình bạn chọn!<br>
+                        Hãy copy đường link dưới đây để gửi cho nhóm (Họ sẽ vào web với quyền Khách - Chỉ xem):<br>
+                        <input type="text" value="${shareUrl}" class="w-full p-2 border rounded bg-gray-50 text-sm mt-3 font-medium text-blue-600 outline-none focus:border-blue-500" readonly onclick="this.select(); document.execCommand('copy'); window.showToast('Đã copy link!');">
+                    `, () => {});
+                } catch(e) { window.showToast("Lỗi hệ thống khi tạo link.", "error"); console.error(e); }
+            } else {
+                window.showToast("Bạn đang chạy ở chế độ Offline/Local. Tính năng tạo Link bị vô hiệu hóa.", "error");
             }
         }
 
         // ==========================================
-        // 4. TABS & RENDERING
+        // 5. TABS & RENDERING
         // ==========================================
-        function switchTab(tab) {
+        window.switchTab = function(tab) {
             currentTab = tab;
             document.querySelectorAll('.nav-link').forEach(el => {
                 el.classList.remove('tab-active'); el.classList.add('tab-inactive');
             });
-            document.getElementById(`nav-${tab}`).classList.remove('tab-inactive');
-            document.getElementById(`nav-${tab}`).classList.add('tab-active');
-            if(window.innerWidth < 768 && !document.getElementById('sidebar').classList.contains('-translate-x-full')) {
-                toggleSidebar();
+            const activeTab = document.getElementById(`nav-${tab}`);
+            if(activeTab) {
+                activeTab.classList.remove('tab-inactive');
+                activeTab.classList.add('tab-active');
             }
-            renderTab();
+            
+            const sidebar = document.getElementById('sidebar');
+            if(window.innerWidth < 768 && sidebar && !sidebar.classList.contains('-translate-x-full')) {
+                window.toggleSidebar();
+            }
+            window.renderTab();
         }
 
-        function renderTab() {
+        window.renderTab = function() {
             const contentArea = document.getElementById('content-area');
+            if(!contentArea) return;
             contentArea.innerHTML = ''; 
-            Object.values(charts).forEach(chart => chart.destroy()); charts = {};
+            Object.values(charts).forEach(chart => { if(chart) chart.destroy(); }); charts = {};
             switch (currentTab) {
-                case 'dashboard': renderDashboard(contentArea); break;
-                case 'timeline': renderTimeline(contentArea); break;
-                case 'planning': renderPlanning(contentArea); break;
-                case 'actual': renderActual(contentArea); break;
-                case 'invoices': renderInvoices(contentArea); break;
-                case 'export': renderExport(contentArea); break;
-                case 'settings': renderSettings(contentArea); break;
+                case 'dashboard': window.renderDashboard(contentArea); break;
+                case 'members': window.renderMembers(contentArea); break;
+                case 'timeline': window.renderTimeline(contentArea); break;
+                case 'planning': window.renderPlanning(contentArea); break;
+                case 'actual': window.renderActual(contentArea); break;
+                case 'invoices': window.renderInvoices(contentArea); break;
+                case 'export': window.renderExport(contentArea); break;
+                case 'settings': window.renderSettings(contentArea); break;
             }
         }
 
         // ==========================================
-        // 5. MODULE: DASHBOARD
+        // 6. MODULE: THÀNH VIÊN (MEMBERS)
         // ==========================================
-        function renderDashboard(container) {
+        window.renderMembers = function(container) {
+            let html = `
+                <div class="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-gray-800">Thông tin thành viên (ICA)</h2>
+                        <p class="text-xs md:text-sm text-gray-500">Quản lý thông tin liên hệ và dữ liệu hộ chiếu để khai báo nhập cảnh.</p>
+                    </div>
+                    <button type="button" onclick="window.openMemberModal()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
+                        <i class="fa-solid fa-plus mr-2"></i>Thêm thành viên
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            `;
+
+            if(!state.members || state.members.length === 0) {
+                html += `<div class="col-span-full text-center py-10 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500 text-sm md:text-base mx-4">Chưa có thành viên nào.</div>`;
+            } else {
+                state.members.forEach(mem => {
+                    const initial = mem.name.charAt(0).toUpperCase();
+                    const roleColor = mem.role.toLowerCase().includes('trưởng') ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+                    
+                    const maskedPassport = mem.passport ? mem.passport.substring(0, 2) + '***' + mem.passport.slice(-2) : 'Chưa có';
+                    const pptColor = mem.passport ? 'text-gray-600' : 'text-red-400 italic';
+
+                    html += `
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col relative group">
+                            <div class="flex items-start space-x-4 mb-4">
+                                <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xl flex-shrink-0">
+                                    ${initial}
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <h3 class="text-lg font-bold text-gray-800 truncate" title="${mem.name}">${mem.name}</h3>
+                                    <span class="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${roleColor}">${mem.role}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-1.5 text-xs md:text-sm flex-1 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <p class="flex items-center text-gray-700"><i class="fa-solid fa-passport w-5 text-indigo-400"></i> <span class="font-medium mr-1">Passport:</span> <span class="${pptColor}">${maskedPassport}</span></p>
+                                ${mem.passportExpiry ? `<p class="flex items-center text-gray-600 pl-5"><span class="text-[10px] mr-1">Hết hạn:</span> ${window.formatDate(mem.passportExpiry)}</p>` : ''}
+                                ${mem.dob ? `<p class="flex items-center text-gray-700"><i class="fa-solid fa-cake-candles w-5 text-pink-400"></i> <span class="font-medium mr-1">Ngày sinh:</span> ${window.formatDate(mem.dob)}</p>` : ''}
+                                ${mem.pob ? `<p class="flex items-center text-gray-700 truncate" title="${mem.pob}"><i class="fa-solid fa-location-dot w-5 text-red-400"></i> <span class="font-medium mr-1">Nơi sinh:</span> ${mem.pob}</p>` : ''}
+                            </div>
+
+                            <div class="mt-3 space-y-1.5 text-xs md:text-sm text-gray-600">
+                                ${mem.phone ? `<p class="flex items-center"><i class="fa-solid fa-phone w-5 text-green-500"></i> ${mem.phone}</p>` : ''}
+                                ${mem.email ? `<p class="flex items-center truncate" title="${mem.email}"><i class="fa-solid fa-envelope w-5 text-blue-400"></i> ${mem.email}</p>` : ''}
+                                ${mem.note ? `<p class="flex items-start mt-2 pt-2 border-t text-xs text-gray-500"><i class="fa-solid fa-note-sticky w-5 text-yellow-500 mt-0.5"></i> <span class="flex-1 italic">${mem.note}</span></p>` : ''}
+                            </div>
+
+                            <div class="absolute top-4 right-4 flex space-x-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition ${state.role !== 'admin' ? 'hidden' : ''}">
+                                <button type="button" onclick="window.openMemberModal(${mem.id})" class="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1.5 rounded"><i class="fa-solid fa-pen"></i></button>
+                                <button type="button" onclick="window.deleteMember(${mem.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        window.openMemberModal = function(id = null) {
+            if(!window.checkAuth()) return;
+            let mem = { name: '', role: 'Thành viên', phone: '', email: '', dob: '', passport: '', passportExpiry: '', pob: '', note: '' };
+            let isEdit = false;
+            if (id) { 
+                const found = state.members.find(m => m.id == id); 
+                if (found) { mem = found; isEdit = true; } 
+            }
+
+            const m = `
+                <div class="p-4 md:p-6 max-h-[90vh] flex flex-col">
+                    <h3 class="text-xl font-bold mb-4 sticky top-0 bg-white z-10 pb-2 border-b">${isEdit ? 'Sửa thông tin thành viên' : 'Thêm thành viên mới'}</h3>
+                    <div class="space-y-4 overflow-y-auto flex-1 pr-1">
+                        
+                        <h4 class="text-sm font-bold text-indigo-800 border-b pb-1 mt-2">1. Thông tin cơ bản</h4>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <div class="w-full sm:w-2/3">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Họ và tên (*)</label>
+                                <input type="text" id="inpMemName" value="${mem.name}" placeholder="Nguyễn Văn A" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                            </div>
+                            <div class="w-full sm:w-1/3">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Vai trò</label>
+                                <select id="inpMemRole" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                                    <option value="Trưởng đoàn" ${mem.role === 'Trưởng đoàn' ? 'selected' : ''}>Trưởng đoàn</option>
+                                    <option value="Thành viên" ${mem.role === 'Thành viên' ? 'selected' : ''}>Thành viên</option>
+                                    <option value="Khách mời" ${mem.role === 'Khách mời' ? 'selected' : ''}>Khách mời</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <div class="w-full sm:w-1/2">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Số điện thoại</label>
+                                <input type="tel" id="inpMemPhone" value="${mem.phone}" placeholder="0987..." class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                            </div>
+                            <div class="w-full sm:w-1/2">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Email / Gmail</label>
+                                <input type="email" id="inpMemEmail" value="${mem.email}" placeholder="email@gmail.com" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                            </div>
+                        </div>
+
+                        <h4 class="text-sm font-bold text-indigo-800 border-b pb-1 mt-6">2. Thông tin khai báo ICA (Passport)</h4>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <div class="w-full sm:w-1/2">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Số Hộ chiếu (Passport No.)</label>
+                                <input type="text" id="inpMemPassport" value="${mem.passport || ''}" placeholder="C1234567" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm font-mono uppercase">
+                            </div>
+                            <div class="w-full sm:w-1/2">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Ngày sinh (DOB)</label>
+                                <input type="date" id="inpMemDob" value="${mem.dob || ''}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                            </div>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <div class="w-full sm:w-1/2">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Ngày hết hạn Hộ chiếu (Expiry Date)</label>
+                                <input type="date" id="inpMemPptExpiry" value="${mem.passportExpiry || ''}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                            </div>
+                            <div class="w-full sm:w-1/2">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Nơi sinh / Quê quán (Place of Birth)</label>
+                                <input type="text" id="inpMemPob" value="${mem.pob || ''}" placeholder="Khánh Hòa, Việt Nam" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                            </div>
+                        </div>
+
+                        <h4 class="text-sm font-bold text-indigo-800 border-b pb-1 mt-6">3. Thông tin khác</h4>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Ghi chú (Chuyên môn, Dị ứng thức ăn...)</label>
+                            <input type="text" id="inpMemNote" value="${mem.note}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                        </div>
+
+                    </div>
+                    <div class="mt-4 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white z-10">
+                        <button type="button" onclick="window.closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
+                        <button type="button" onclick="window.saveMember(${id ? id : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button>
+                    </div>
+                </div>
+            `;
+            window.openModal(m);
+        }
+
+        window.saveMember = function(id) {
+            const name = document.getElementById('inpMemName').value.trim();
+            const role = document.getElementById('inpMemRole').value;
+            const phone = document.getElementById('inpMemPhone').value.trim();
+            const email = document.getElementById('inpMemEmail').value.trim();
+            const dob = document.getElementById('inpMemDob').value;
+            const passport = document.getElementById('inpMemPassport').value.trim().toUpperCase();
+            const passportExpiry = document.getElementById('inpMemPptExpiry').value;
+            const pob = document.getElementById('inpMemPob').value.trim();
+            const note = document.getElementById('inpMemNote').value.trim();
+
+            if(!name) { window.showToast("Vui lòng nhập Họ tên!", "error"); return; }
+            if(!state.members) state.members = [];
+
+            if (id) {
+                const mem = state.members.find(m => m.id == id);
+                if(mem) { 
+                    mem.name=name; mem.role=role; mem.phone=phone; mem.email=email; 
+                    mem.dob=dob; mem.passport=passport; mem.passportExpiry=passportExpiry; mem.pob=pob; mem.note=note; 
+                }
+                window.showToast("Cập nhật thành công");
+            } else {
+                state.members.push({ id: Date.now(), name, role, phone, email, dob, passport, passportExpiry, pob, note });
+                window.showToast("Đã thêm thành viên");
+                state.trip.members = state.members.length;
+            }
+            window.closeModal(); window.renderTab();
+        }
+
+        window.deleteMember = function(id) {
+            if(!window.checkAuth()) return;
+            window.showConfirm('Xóa thành viên này?', () => {
+                state.members = state.members.filter(m => m.id != id);
+                state.trip.members = state.members.length || 1;
+                window.showToast('Đã xóa', 'success'); window.renderTab();
+            });
+        }
+
+        // ==========================================
+        // 7. MODULE: DASHBOARD
+        // ==========================================
+        window.renderDashboard = function(container) {
             const estimatedTotal = state.plans.filter(p => p.selected).reduce((sum, p) => sum + p.total, 0);
             const actualTotal = state.actuals.reduce((sum, a) => sum + a.amount, 0);
             const remaining = state.trip.budget - actualTotal;
             const overBudget = actualTotal > state.trip.budget;
 
+            // Logic Trợ lý Nhận xét chuyến đi
+            let finStatus = "";
+            if (actualTotal === 0) finStatus = "Chưa có phát sinh chi phí thực tế. Ngân sách khả dụng 100%.";
+            else if (actualTotal > state.trip.budget) finStatus = "⚠️ Đã <strong class='text-red-600'>VƯỢT NGÂN SÁCH</strong>! Cần rà soát lại các khoản chi ngay lập tức.";
+            else if (actualTotal > estimatedTotal) finStatus = "Đang chi tiêu <strong class='text-orange-600'>vượt mức dự toán</strong> đã chọn, nhưng vẫn nằm trong ngân sách an toàn.";
+            else finStatus = "✅ Chi tiêu đang được kiểm soát tốt, bám sát dự toán.";
+
+            const actualCount = state.actuals.length;
+            const invoiceCount = state.invoices.length;
+            let invStatus = `Đã thu thập <strong>${invoiceCount}</strong> minh chứng / <strong>${actualCount}</strong> khoản chi.<br>`;
+            if (actualCount === 0) invStatus += "Chưa có khoản chi nào để thu thập hóa đơn.";
+            else if (invoiceCount < actualCount) invStatus += "⚠️ <span class='text-red-600 font-medium'>Còn thiếu hóa đơn</span>, cần bổ sung để hoàn thiện hồ sơ.";
+            else invStatus += "✅ Hồ sơ chứng từ đầy đủ.";
+
+            const plannedEvents = state.timeline ? state.timeline.length : 0;
+            const actualEvents = state.actualTimeline ? state.actualTimeline.length : 0;
+            let timelineStatus = `Kế hoạch: <strong>${plannedEvents}</strong> hoạt động.<br>Thực tế: <strong>${actualEvents}</strong> sự kiện.<br>`;
+            if (actualEvents === 0) timelineStatus += "Chưa diễn ra hoặc chưa ghi nhận thực tế.";
+            else timelineStatus += "✅ Đang theo dõi tiến độ hiện trường.";
+
             let html = `
                 <div class="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-4">
                     <h2 class="text-2xl font-bold text-gray-800">Tổng quan chuyến đi</h2>
-                    <button type="button" onclick="editTripInfo()" class="bg-white border shadow-sm px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition w-full md:w-auto ${state.role !== 'admin' ? 'hidden' : ''}">
+                    <button type="button" onclick="window.editTripInfo()" class="bg-white border shadow-sm px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition w-full md:w-auto ${state.role !== 'admin' ? 'hidden' : ''}">
                         <i class="fa-solid fa-pen mr-2"></i>Sửa thông tin
                     </button>
                 </div>
@@ -554,22 +766,43 @@
                     <div class="bg-indigo-600 text-white rounded-xl p-5 shadow-lg relative overflow-hidden">
                         <i class="fa-solid fa-wallet absolute right-[-20px] bottom-[-20px] text-8xl opacity-10"></i>
                         <p class="text-indigo-100 text-xs md:text-sm font-medium uppercase tracking-wider mb-1">Tổng Ngân sách</p>
-                        <h3 class="text-xl md:text-2xl font-bold truncate" title="${formatMoney(state.trip.budget)}">${formatMoney(state.trip.budget)}</h3>
+                        <h3 class="text-xl md:text-2xl font-bold truncate" title="${window.formatMoney(state.trip.budget)}">${window.formatMoney(state.trip.budget)}</h3>
                         <p class="text-xs md:text-sm mt-2"><i class="fa-solid fa-users mr-1"></i> ${state.trip.members} thành viên</p>
                     </div>
                     <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
                         <p class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wider mb-1">Dự toán (Đang chọn)</p>
-                        <h3 class="text-xl md:text-2xl font-bold text-blue-600 truncate" title="${formatMoney(estimatedTotal)}">${formatMoney(estimatedTotal)}</h3>
+                        <h3 class="text-xl md:text-2xl font-bold text-blue-600 truncate" title="${window.formatMoney(estimatedTotal)}">${window.formatMoney(estimatedTotal)}</h3>
                     </div>
                     <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
                         <p class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wider mb-1">Thực tế đã chi</p>
-                        <h3 class="text-xl md:text-2xl font-bold ${actualTotal > estimatedTotal ? 'text-orange-500' : 'text-green-600'} truncate" title="${formatMoney(actualTotal)}">${formatMoney(actualTotal)}</h3>
+                        <h3 class="text-xl md:text-2xl font-bold ${actualTotal > estimatedTotal ? 'text-orange-500' : 'text-green-600'} truncate" title="${window.formatMoney(actualTotal)}">${window.formatMoney(actualTotal)}</h3>
                     </div>
                     <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
                         <p class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wider mb-1">Còn lại</p>
-                        <h3 class="text-xl md:text-2xl font-bold ${overBudget ? 'text-red-600' : 'text-gray-800'} truncate" title="${formatMoney(remaining)}">${formatMoney(remaining)}</h3>
+                        <h3 class="text-xl md:text-2xl font-bold ${overBudget ? 'text-red-600' : 'text-gray-800'} truncate" title="${window.formatMoney(remaining)}">${window.formatMoney(remaining)}</h3>
                     </div>
                 </div>
+
+                <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <i class="fa-solid fa-robot text-indigo-500 mr-2"></i> Trợ lý phân tích chuyến đi
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-100 shadow-inner">
+                            <h4 class="font-bold text-indigo-800 mb-2"><i class="fa-solid fa-money-bill-trend-up mr-1.5"></i> Tình hình Tài chính</h4>
+                            <p class="text-sm text-gray-700 leading-relaxed">${finStatus}</p>
+                        </div>
+                        <div class="bg-green-50 rounded-xl p-4 border border-green-100 shadow-inner">
+                            <h4 class="font-bold text-green-800 mb-2"><i class="fa-solid fa-file-invoice mr-1.5"></i> Trạng thái Chứng từ</h4>
+                            <p class="text-sm text-gray-700 leading-relaxed">${invStatus}</p>
+                        </div>
+                        <div class="bg-orange-50 rounded-xl p-4 border border-orange-100 shadow-inner">
+                            <h4 class="font-bold text-orange-800 mb-2"><i class="fa-solid fa-route mr-1.5"></i> Tiến độ Lịch trình</h4>
+                            <p class="text-sm text-gray-700 leading-relaxed">${timelineStatus}</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 w-full overflow-hidden">
                         <h3 class="text-lg font-semibold mb-4 text-gray-700">Phân bổ Dự toán</h3>
@@ -581,107 +814,162 @@
                     </div>
                 </div>
             `;
-            container.innerHTML = html; renderCharts();
+            container.innerHTML = html; window.renderCharts();
         }
 
-        function renderCharts() {
+        window.renderCharts = function() {
             const labels = CATEGORIES.map(c => c.name.substring(3)); 
             const estData = CATEGORIES.map(c => state.plans.filter(p => p.catId === c.id && p.selected).reduce((sum, p) => sum + p.total, 0));
             const actData = CATEGORIES.map(c => state.actuals.filter(a => a.catId === c.id).reduce((sum, a) => sum + a.amount, 0));
-            charts.pie = new Chart(document.getElementById('pieChart').getContext('2d'), {
-                type: 'doughnut', data: { labels: labels, datasets: [{ data: estData, backgroundColor: ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'], borderWidth: 0 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: window.innerWidth < 768 ? 'bottom' : 'right', labels: { boxWidth: 12 } } } }
-            });
-            charts.bar = new Chart(document.getElementById('barChart').getContext('2d'), {
-                type: 'bar', data: { labels: labels, datasets: [{ label: 'Dự toán', data: estData, backgroundColor: '#cbd5e1', borderRadius: 4 }, { label: 'Thực tế', data: actData, backgroundColor: '#4f46e5', borderRadius: 4 }] },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: (val) => val / 1000000 + 'M' } }, x: { ticks: { maxRotation: 45, minRotation: 45 } } } }
-            });
+            const pieCtx = document.getElementById('pieChart');
+            if(pieCtx) {
+                charts.pie = new Chart(pieCtx.getContext('2d'), {
+                    type: 'doughnut', data: { labels: labels, datasets: [{ data: estData, backgroundColor: ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'], borderWidth: 0 }] },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        plugins: { 
+                            legend: { position: window.innerWidth < 768 ? 'bottom' : 'right', labels: { boxWidth: 12 } },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let value = context.parsed;
+                                        let total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        let percentage = total > 0 ? Math.round((value / total) * 100) + '%' : '0%';
+                                        return ' ' + context.label + ': ' + window.formatMoney(value) + ' (' + percentage + ')';
+                                    }
+                                }
+                            }
+                        } 
+                    }
+                });
+            }
+            const barCtx = document.getElementById('barChart');
+            if(barCtx) {
+                charts.bar = new Chart(barCtx.getContext('2d'), {
+                    type: 'bar', data: { labels: labels, datasets: [{ label: 'Dự toán', data: estData, backgroundColor: '#cbd5e1', borderRadius: 4 }, { label: 'Thực tế', data: actData, backgroundColor: '#4f46e5', borderRadius: 4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: (val) => val / 1000000 + 'M' } }, x: { ticks: { maxRotation: 45, minRotation: 45 } } } }
+                });
+            }
         }
 
-        function editTripInfo() {
-            if(!checkAuth()) return;
+        window.editTripInfo = function() {
+            if(!window.checkAuth()) return;
             const m = `
                 <div class="p-4 md:p-6"><h3 class="text-xl font-bold mb-4">Cập nhật chuyến đi</h3>
                     <div class="space-y-4">
-                        <div><label class="block text-sm font-medium text-gray-700 mb-1">Ngân sách tổng (VNĐ)</label><input type="number" id="inpBudget" value="${state.trip.budget}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm"></div>
+                        <div><label class="block text-sm font-medium text-gray-700 mb-1">Ngân sách tổng (VNĐ)</label><input type="number" id="inpBudget" value="${state.trip.budget}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></div>
                         <div class="flex flex-col sm:flex-row gap-4">
-                            <div class="w-full sm:w-1/2"><label class="block text-sm font-medium text-gray-700 mb-1">Số thành viên</label><input type="number" id="inpMembers" value="${state.trip.members}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm"></div>
-                            <div class="w-full sm:w-1/2"><label class="block text-sm font-medium text-gray-700 mb-1">Tỷ giá (1 SGD = ? VNĐ)</label><input type="number" id="inpExchangeRate" value="${state.trip.exchangeRate || 18500}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm"></div>
+                            <div class="w-full sm:w-1/2"><label class="block text-sm font-medium text-gray-700 mb-1">Số thành viên</label><input type="number" id="inpMembers" value="${state.trip.members}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm bg-gray-100" readonly title="Cập nhật tự động từ tab Thành viên"></div>
+                            <div class="w-full sm:w-1/2"><label class="block text-sm font-medium text-gray-700 mb-1">Tỷ giá (1 SGD = ? VNĐ)</label><input type="number" id="inpExchangeRate" value="${state.trip.exchangeRate || 18500}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></div>
                         </div>
                     </div>
-                    <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-md hover:bg-gray-50 text-sm">Hủy</button><button type="button" onclick="saveTripInfo()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button></div>
+                    <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="window.closeModal()" class="px-4 py-2 border rounded-md hover:bg-gray-50 text-sm">Hủy</button><button type="button" onclick="window.saveTripInfo()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button></div>
                 </div>`;
-            openModal(m);
+            window.openModal(m);
         }
-        function saveTripInfo() {
+
+        window.saveTripInfo = function() {
             state.trip.budget = parseFloat(document.getElementById('inpBudget').value) || 0;
-            state.trip.members = parseInt(document.getElementById('inpMembers').value) || 1;
             state.trip.exchangeRate = parseFloat(document.getElementById('inpExchangeRate').value) || 18500;
-            closeModal(); showToast('Đã cập nhật thông tin chuyến đi'); renderTab();
+            window.closeModal(); window.showToast('Đã cập nhật thông tin chuyến đi'); window.renderTab();
         }
 
         // ==========================================
-        // 6. MODULE: TIMELINE
+        // 8. MODULE: TIMELINE (KẾ HOẠCH & THỰC TẾ)
         // ==========================================
-        function renderTimeline(container) {
+        window.switchTimelineTab = function(type) {
+            window.currentTimelineTab = type;
+            window.renderTab();
+        }
+
+        window.renderTimeline = function(container) {
+            if (!state.actualTimeline) state.actualTimeline = [];
+            const isPlanned = window.currentTimelineTab === 'planned';
+            const activeData = isPlanned ? state.timeline : state.actualTimeline;
+
             let html = `
-                <div class="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mb-6 gap-4">
+                <div class="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-6 gap-4">
                     <div>
                         <h2 class="text-xl md:text-2xl font-bold text-gray-800">Lịch trình chuyến đi</h2>
-                        <p class="text-xs md:text-sm text-gray-500">Chi tiết hoạt động, thời gian và địa điểm tại Singapore.</p>
+                        <p class="text-xs md:text-sm text-gray-500">So sánh kế hoạch dự kiến và thực tế diễn ra.</p>
                     </div>
-                    <button type="button" onclick="openTimelineModal()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
-                        <i class="fa-solid fa-plus mr-2"></i>Thêm hoạt động
+                    
+                    <div class="flex flex-col sm:flex-row w-full md:w-auto gap-2">
+                        <div class="flex bg-gray-200 rounded-lg p-1">
+                            <button onclick="window.switchTimelineTab('planned')" class="flex-1 px-4 py-1.5 text-sm font-medium rounded-md transition ${isPlanned ? 'bg-white shadow text-indigo-700' : 'text-gray-600 hover:text-gray-800'}">Dự kiến</button>
+                            <button onclick="window.switchTimelineTab('actual')" class="flex-1 px-4 py-1.5 text-sm font-medium rounded-md transition ${!isPlanned ? 'bg-white shadow text-indigo-700' : 'text-gray-600 hover:text-gray-800'}">Thực tế</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <button type="button" onclick="window.openTimelineModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
+                        <i class="fa-solid fa-plus mr-1"></i>Thêm hoạt động
                     </button>
+                    <div class="flex space-x-2">
+                        <button type="button" onclick="window.exportTimelinePDF()" class="bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-100 transition shadow-sm"><i class="fa-solid fa-file-pdf mr-1"></i>PDF</button>
+                        <button type="button" onclick="window.exportTimelineExcel()" class="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-100 transition shadow-sm"><i class="fa-solid fa-file-excel mr-1"></i>Excel</button>
+                    </div>
                 </div>
             `;
 
-            if(!state.timeline || state.timeline.length === 0) {
-                html += `<div class="text-center py-10 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500 text-sm md:text-base mx-4">Chưa có lịch trình nào. Hãy thêm hoạt động mới.</div>`;
+            if(!activeData || activeData.length === 0) {
+                html += `<div class="text-center py-10 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500 text-sm mx-4">Chưa có lịch trình nào ở mục này.</div>`;
                 container.innerHTML = html;
                 return;
             }
 
-            const sortedEvents = [...state.timeline].sort((a,b) => new Date(a.date + 'T' + (a.time||'00:00')) - new Date(b.date + 'T' + (b.time||'00:00')));
+            const sortedEvents = [...activeData].sort((a,b) => new Date(a.date + 'T' + (a.time||'00:00')) - new Date(b.date + 'T' + (b.time||'00:00')));
             const groupedEvents = {};
             sortedEvents.forEach(ev => {
                 if(!groupedEvents[ev.date]) groupedEvents[ev.date] = [];
                 groupedEvents[ev.date].push(ev);
             });
 
-            html += `<div class="max-w-4xl mx-auto px-2 md:px-0 py-4"><div class="relative border-l-2 border-indigo-200 ml-3 md:ml-4">`;
+            html += `<div id="timeline-export-target" class="max-w-4xl mx-auto px-2 md:px-0 py-4 bg-white md:bg-transparent rounded-xl"><div class="relative border-l-2 ${isPlanned ? 'border-indigo-200' : 'border-orange-200'} ml-3 md:ml-4">`;
+
+            // Hidden header for PDF export
+            html += `
+                <div class="hidden print-header text-center mb-8">
+                    <h2 class="text-2xl font-bold uppercase mb-2">NHẬT KÝ HÀNH TRÌNH</h2>
+                    <h3 class="text-lg font-bold text-gray-600">(${isPlanned ? 'LỊCH TRÌNH DỰ KIẾN' : 'THỰC TẾ DIỄN RA'})</h3>
+                </div>
+            `;
 
             for (const [date, events] of Object.entries(groupedEvents)) {
                 html += `
                     <div class="mb-8 md:mb-10 ml-6 md:ml-8">
-                        <span class="absolute flex items-center justify-center w-8 h-8 bg-indigo-100 rounded-full -left-[17px] ring-4 ring-white text-indigo-600"><i class="fa-solid fa-calendar-day text-sm"></i></span>
-                        <h3 class="font-bold text-lg text-indigo-900 mb-4 bg-white inline-block pr-4 py-1">${formatDate(date)}</h3>
+                        <span class="absolute flex items-center justify-center w-8 h-8 ${isPlanned ? 'bg-indigo-100 text-indigo-600' : 'bg-orange-100 text-orange-600'} rounded-full -left-[17px] ring-4 ring-white"><i class="fa-solid fa-calendar-day text-sm"></i></span>
+                        <h3 class="font-bold text-lg ${isPlanned ? 'text-indigo-900' : 'text-orange-900'} mb-4 bg-white inline-block pr-4 py-1">${window.formatDate(date)}</h3>
                         <div class="space-y-4">
                 `;
 
                 events.forEach(ev => {
-                    let planBtnHtml = '';
-                    if (ev.planId) {
+                    let extraHtml = '';
+                    if (isPlanned && ev.planId) {
                         const linkedPlan = state.plans.find(p => p.id == ev.planId);
                         if (linkedPlan) {
-                            planBtnHtml = `<div class="mt-3"><button type="button" onclick="viewPlanDetails(${ev.planId})" class="text-[11px] md:text-xs bg-blue-50 text-blue-700 border border-blue-100 px-3 py-1.5 rounded-lg shadow-sm hover:bg-blue-100 transition inline-flex items-center font-medium"><i class="fa-solid fa-map-location-dot mr-1.5"></i> Xem phương án & Bản đồ</button></div>`;
+                            extraHtml = `<div class="mt-3 hide-on-print"><button type="button" onclick="window.viewPlanDetails(${ev.planId})" class="text-[11px] md:text-xs bg-blue-50 text-blue-700 border border-blue-100 px-3 py-1.5 rounded-lg shadow-sm hover:bg-blue-100 transition inline-flex items-center font-medium"><i class="fa-solid fa-map-location-dot mr-1.5"></i> Xem phương án & Bản đồ</button></div>`;
                         }
+                    } else if (!isPlanned && ev.image && ev.image.trim() !== '') {
+                        extraHtml = `<div class="mt-3 bg-gray-50 border rounded p-2 overflow-x-auto">${ev.image}</div>`;
                     }
 
                     html += `
-                        <div class="bg-white p-4 md:p-5 rounded-xl border border-gray-100 shadow-sm relative group hover:shadow-md transition">
-                            <span class="absolute flex items-center justify-center w-3 h-3 bg-indigo-500 rounded-full -left-[2.1rem] md:-left-[2.35rem] top-6 ring-4 ring-white"></span>
+                        <div class="bg-white p-4 md:p-5 rounded-xl border border-gray-100 shadow-sm relative group hover:shadow-md transition avoid-break">
+                            <span class="absolute flex items-center justify-center w-3 h-3 ${isPlanned ? 'bg-indigo-500' : 'bg-orange-500'} rounded-full -left-[2.1rem] md:-left-[2.35rem] top-6 ring-4 ring-white"></span>
                             <div class="flex justify-between items-start gap-4">
-                                <div class="flex-1">
-                                    <div class="text-sm font-bold text-indigo-600 mb-1 flex items-center"><i class="fa-regular fa-clock mr-1.5"></i> ${ev.time || 'Cả ngày'}</div>
+                                <div class="flex-1 w-full overflow-hidden">
+                                    <div class="text-sm font-bold ${isPlanned ? 'text-indigo-600' : 'text-orange-600'} mb-1 flex items-center"><i class="fa-regular fa-clock mr-1.5"></i> ${ev.time || 'Cả ngày'}</div>
                                     <h4 class="text-base md:text-lg font-bold text-gray-800 break-words">${ev.title}</h4>
                                     ${ev.location ? `<p class="text-xs md:text-sm text-gray-500 mt-1.5 font-medium"><i class="fa-solid fa-location-dot text-red-400 mr-1.5 w-4 text-center"></i> ${ev.location}</p>` : ''}
-                                    ${ev.notes ? `<p class="text-xs md:text-sm text-gray-600 mt-2.5 bg-gray-50 p-2.5 rounded-lg border border-gray-100">${ev.notes}</p>` : ''}
-                                    ${planBtnHtml}
+                                    ${ev.notes ? `<p class="text-xs md:text-sm text-gray-600 mt-2.5 bg-gray-50 p-2.5 rounded-lg border border-gray-100 whitespace-pre-wrap">${ev.notes}</p>` : ''}
+                                    ${extraHtml}
                                 </div>
-                                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity ${state.role !== 'admin' ? 'hidden' : ''}">
-                                    <button type="button" onclick="openTimelineModal(${ev.id})" class="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-2 rounded transition" title="Sửa"><i class="fa-solid fa-pen pointer-events-none"></i></button>
-                                    <button type="button" onclick="deleteTimelineEvent(${ev.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded transition" title="Xóa"><i class="fa-solid fa-trash pointer-events-none"></i></button>
+                                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hide-on-print ${state.role !== 'admin' ? 'hidden' : ''}">
+                                    <button type="button" onclick="window.openTimelineModal(${ev.id})" class="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-2 rounded transition" title="Sửa"><i class="fa-solid fa-pen pointer-events-none"></i></button>
+                                    <button type="button" onclick="window.deleteTimelineEvent(${ev.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded transition" title="Xóa"><i class="fa-solid fa-trash pointer-events-none"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -693,18 +981,35 @@
             container.innerHTML = html;
         }
 
-        function openTimelineModal(id = null) {
-            if(!checkAuth()) return;
-            let ev = { date: new Date().toISOString().split('T')[0], time: '08:00', title: '', location: '', notes: '', planId: '' };
-            let isEdit = false;
-            if (id) { const found = state.timeline.find(t => t.id == id); if (found) { ev = found; isEdit = true; } }
+        window.openTimelineModal = function(id = null) {
+            if(!window.checkAuth()) return;
+            const isPlanned = window.currentTimelineTab === 'planned';
+            const activeData = isPlanned ? state.timeline : state.actualTimeline;
 
-            let planOptions = `<option value="">-- Không gắn phương án --</option>`;
-            state.plans.forEach(p => { planOptions += `<option value="${p.id}" ${ev.planId == p.id ? 'selected' : ''}>${CATEGORIES.find(c => c.id == p.catId)?.name.substring(3)} - ${p.desc}</option>`; });
+            let ev = { date: new Date().toISOString().split('T')[0], time: '08:00', title: '', location: '', notes: '', planId: '', image: '' };
+            let isEdit = false;
+            if (id) { const found = activeData.find(t => t.id == id); if (found) { ev = found; isEdit = true; } }
+
+            let extraInputHtml = '';
+            if (isPlanned) {
+                let planOptions = `<option value="">-- Không gắn phương án --</option>`;
+                state.plans.forEach(p => { planOptions += `<option value="${p.id}" ${ev.planId == p.id ? 'selected' : ''}>${CATEGORIES.find(c => c.id == p.catId)?.name.substring(3)} - ${p.desc}</option>`; });
+                extraInputHtml = `
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Gắn với phương án chi phí (Tùy chọn)</label>
+                        <select id="inpTlPlanId" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm text-indigo-700 font-medium">${planOptions}</select>
+                    </div>`;
+            } else {
+                extraInputHtml = `
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Hình ảnh đính kèm (Bấm Ctrl+V để dán)</label>
+                        <div id="inpTlImage" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 focus:border-indigo-500 outline-none text-sm bg-white">${ev.image || ''}</div>
+                    </div>`;
+            }
 
             const m = `
                 <div class="p-4 md:p-6">
-                    <h3 class="text-xl font-bold mb-4">${isEdit ? 'Sửa hoạt động' : 'Thêm hoạt động lịch trình'}</h3>
+                    <h3 class="text-xl font-bold mb-4">${isEdit ? 'Sửa hoạt động' : 'Thêm hoạt động'} ${isPlanned ? '(Dự kiến)' : '(Thực tế)'}</h3>
                     <div class="space-y-4">
                         <div class="flex flex-col sm:flex-row gap-4">
                             <div class="w-full sm:w-1/2"><label class="block text-sm font-medium text-gray-700 mb-1">Ngày</label><input type="date" id="inpTlDate" value="${ev.date}" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></div>
@@ -712,55 +1017,123 @@
                         </div>
                         <div><label class="block text-sm font-medium text-gray-700 mb-1">Tên hoạt động (*)</label><input type="text" id="inpTlTitle" value="${ev.title}" placeholder="VD: Khai mạc cuộc thi" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></div>
                         <div><label class="block text-sm font-medium text-gray-700 mb-1">Địa điểm</label><input type="text" id="inpTlLoc" value="${ev.location}" placeholder="VD: NTU Campus" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Gắn với phương án chi phí (Tùy chọn)</label>
-                            <select id="inpTlPlanId" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm text-indigo-700 font-medium">${planOptions}</select>
-                        </div>
-                        <div><label class="block text-sm font-medium text-gray-700 mb-1">Ghi chú thêm</label><textarea id="inpTlNotes" rows="2" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">${ev.notes}</textarea></div>
+                        ${extraInputHtml}
+                        <div><label class="block text-sm font-medium text-gray-700 mb-1">Ghi chú</label><textarea id="inpTlNotes" rows="3" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">${ev.notes}</textarea></div>
                     </div>
                     <div class="mt-6 flex justify-end space-x-3">
-                        <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
-                        <button type="button" onclick="saveTimelineEvent(${id ? id : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button>
+                        <button type="button" onclick="window.closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
+                        <button type="button" onclick="window.saveTimelineEvent(${id ? id : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button>
                     </div>
                 </div>
             `;
-            openModal(m);
+            window.openModal(m);
+
+            if (!isPlanned) {
+                setTimeout(() => window.setupPasteHandler('inpTlImage'), 50);
+            }
         }
 
-        function saveTimelineEvent(id) {
+        window.saveTimelineEvent = function(id) {
+            const isPlanned = window.currentTimelineTab === 'planned';
+            const activeData = isPlanned ? state.timeline : state.actualTimeline;
+
             const date = document.getElementById('inpTlDate').value;
             const time = document.getElementById('inpTlTime').value;
             const title = document.getElementById('inpTlTitle').value.trim();
             const location = document.getElementById('inpTlLoc').value.trim();
             const notes = document.getElementById('inpTlNotes').value.trim();
-            const planId = document.getElementById('inpTlPlanId').value ? parseInt(document.getElementById('inpTlPlanId').value) : null;
+            
+            let planId = null; let image = '';
+            if (isPlanned) {
+                planId = document.getElementById('inpTlPlanId').value ? parseInt(document.getElementById('inpTlPlanId').value) : null;
+            } else {
+                image = document.getElementById('inpTlImage').innerHTML;
+            }
 
-            if(!title || !date) { showToast("Vui lòng nhập Ngày và Tên!", "error"); return; }
-            if (!state.timeline) state.timeline = [];
+            if(!title || !date) { window.showToast("Vui lòng nhập Ngày và Tên!", "error"); return; }
 
             if (id) { 
-                const ev = state.timeline.find(t => t.id == id);
-                if(ev) { ev.date = date; ev.time = time; ev.title = title; ev.location = location; ev.notes = notes; ev.planId = planId; }
-                showToast("Đã cập nhật lịch trình");
+                const ev = activeData.find(t => t.id == id);
+                if(ev) { 
+                    ev.date = date; ev.time = time; ev.title = title; ev.location = location; ev.notes = notes; 
+                    if (isPlanned) ev.planId = planId; else ev.image = image;
+                }
+                window.showToast("Đã cập nhật lịch trình");
             } else { 
-                state.timeline.push({ id: Date.now(), date, time, title, location, notes, planId });
-                showToast("Đã thêm vào lịch trình");
+                activeData.push({ id: Date.now(), date, time, title, location, notes, planId, image });
+                window.showToast("Đã thêm vào lịch trình");
             }
-            closeModal(); renderTab();
+            window.closeModal(); window.renderTab();
         }
 
-        function deleteTimelineEvent(id) {
-            if(!checkAuth()) return;
-            showConfirm('Bạn có chắc chắn muốn xóa hoạt động này khỏi lịch trình?', () => {
-                state.timeline = state.timeline.filter(t => t.id != id);
-                showToast('Đã xóa', 'success'); renderTab();
+        window.deleteTimelineEvent = function(id) {
+            if(!window.checkAuth()) return;
+            const isPlanned = window.currentTimelineTab === 'planned';
+            window.showConfirm('Bạn có chắc chắn muốn xóa hoạt động này khỏi lịch trình?', () => {
+                if (isPlanned) state.timeline = state.timeline.filter(t => t.id != id);
+                else state.actualTimeline = state.actualTimeline.filter(t => t.id != id);
+                window.showToast('Đã xóa', 'success'); window.renderTab();
             });
         }
 
+        window.exportTimelinePDF = function() {
+            const isPlanned = window.currentTimelineTab === 'planned';
+            const element = document.getElementById('timeline-export-target');
+            if(!element) return;
+
+            // Ẩn các nút thao tác khi in
+            const hideElements = element.querySelectorAll('.hide-on-print');
+            hideElements.forEach(el => el.style.display = 'none');
+
+            const titleBlock = element.querySelector('.print-header');
+            if(titleBlock) titleBlock.classList.remove('hidden');
+
+            var opt = {
+                margin:       10,
+                filename:     isPlanned ? 'LichTrinh_DuKien.pdf' : 'NhatKy_ThucTe.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            window.showToast("Đang tạo PDF...", "info");
+            html2pdf().set(opt).from(element).save().then(() => {
+                if(titleBlock) titleBlock.classList.add('hidden');
+                hideElements.forEach(el => el.style.display = '');
+                window.showToast("Đã tải PDF", "success");
+            });
+        }
+
+        window.exportTimelineExcel = function() {
+            const isPlanned = window.currentTimelineTab === 'planned';
+            const activeData = isPlanned ? state.timeline : state.actualTimeline;
+
+            if(!activeData || activeData.length === 0) { window.showToast("Không có dữ liệu để xuất", "error"); return; }
+
+            try {
+                const wb = XLSX.utils.book_new();
+                const sortedEvents = [...activeData].sort((a,b) => new Date(a.date + 'T' + (a.time||'00:00')) - new Date(b.date + 'T' + (b.time||'00:00')));
+                
+                const title = isPlanned ? 'LỊCH TRÌNH DỰ KIẾN NTU 2026' : 'NHẬT KÝ THỰC TẾ NTU 2026';
+                const data = [[title], [], ['Ngày', 'Giờ', 'Hoạt động', 'Địa điểm', 'Ghi chú']];
+                
+                sortedEvents.forEach(ev => {
+                    data.push([ window.formatDate(ev.date), ev.time || '', ev.title, ev.location || '', ev.notes || '' ]);
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                // Adjust col widths
+                ws['!cols'] = [{wch: 12}, {wch: 10}, {wch: 40}, {wch: 25}, {wch: 40}];
+                
+                XLSX.utils.book_append_sheet(wb, ws, isPlanned ? "Dự kiến" : "Thực tế");
+                XLSX.writeFile(wb, isPlanned ? "LichTrinh_DuKien.xlsx" : "NhatKy_ThucTe.xlsx");
+                window.showToast("Đã tải file Excel", "success");
+            } catch(e) { window.showToast("Lỗi xuất Excel!", "error"); }
+        }
+
         // ==========================================
-        // 7. MODULE: PLANNING
+        // 9. MODULE: PLANNING
         // ==========================================
-        function renderPlanning(container) {
+        window.renderPlanning = function(container) {
             let html = `
                 <div class="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-6 gap-4">
                     <div>
@@ -768,9 +1141,9 @@
                         <p class="text-xs md:text-sm text-gray-500">Tạo nhiều phương án, tích chọn và lưu lại thành các danh sách kịch bản.</p>
                     </div>
                     <div class="flex space-x-2 w-full md:w-auto overflow-x-auto pb-1">
-                        <button type="button" onclick="promptSavePlanList()" class="flex-1 md:flex-none bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition whitespace-nowrap ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-bookmark mr-1"></i>Lưu DS</button>
-                        <button type="button" onclick="optimizePlans()" class="flex-1 md:flex-none bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition whitespace-nowrap ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Tối ưu</button>
-                        <button type="button" onclick="openAddPlanModal()" class="flex-1 md:flex-none bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition whitespace-nowrap ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-plus mr-1"></i>Thêm</button>
+                        <button type="button" onclick="window.promptSavePlanList()" class="flex-1 md:flex-none bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition whitespace-nowrap ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-bookmark mr-1"></i>Lưu DS</button>
+                        <button type="button" onclick="window.optimizePlans()" class="flex-1 md:flex-none bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition whitespace-nowrap ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Tối ưu</button>
+                        <button type="button" onclick="window.openAddPlanModal()" class="flex-1 md:flex-none bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition whitespace-nowrap ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-plus mr-1"></i>Thêm</button>
                     </div>
                 </div>
                 <div class="space-y-6">
@@ -796,14 +1169,14 @@
                 catPlans.forEach(plan => {
                     html += `
                                 <tr class="${plan.selected ? 'bg-indigo-50/50' : 'hover:bg-gray-50'} transition">
-                                    <td class="p-3 text-center"><input type="checkbox" ${plan.selected ? 'checked' : ''} onchange="togglePlanSelection(${plan.id})" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded cursor-pointer" ${state.role !== 'admin' ? 'disabled' : ''}></td>
+                                    <td class="p-3 text-center"><input type="checkbox" ${plan.selected ? 'checked' : ''} onchange="window.togglePlanSelection(${plan.id})" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded cursor-pointer" ${state.role !== 'admin' ? 'disabled' : ''}></td>
                                     <td class="p-3 font-medium text-gray-800 break-words">${plan.desc}${plan.notes ? `<i class="fa-solid fa-sticky-note text-yellow-500 ml-1"></i>` : ''}</td>
-                                    <td class="p-3 text-right">${plan.currency === 'SGD' ? `<div class="font-bold text-gray-800">${formatSGD(plan.originalUnit)}</div><div class="text-[10px] text-gray-400 font-medium">~ ${formatMoney(plan.unit)}</div>` : `<div class="font-bold text-gray-800">${formatMoney(plan.unit)}</div>`}</td>
+                                    <td class="p-3 text-right">${plan.currency === 'SGD' ? `<div class="font-bold text-gray-800">${window.formatSGD(plan.originalUnit)}</div><div class="text-[10px] text-gray-400 font-medium">~ ${window.formatMoney(plan.unit)}</div>` : `<div class="font-bold text-gray-800">${window.formatMoney(plan.unit)}</div>`}</td>
                                     <td class="p-3 text-center text-gray-600">${plan.qty}</td>
-                                    <td class="p-3 text-right font-bold ${plan.selected ? 'text-indigo-700' : 'text-gray-800'}">${formatMoney(plan.total)}</td>
+                                    <td class="p-3 text-right font-bold ${plan.selected ? 'text-indigo-700' : 'text-gray-800'}">${window.formatMoney(plan.total)}</td>
                                     <td class="p-3 text-center flex justify-center space-x-2">
-                                        <button type="button" onclick="viewPlanDetails(${plan.id})" class="text-blue-500 hover:text-blue-700 p-1" title="Chi tiết"><i class="fa-solid fa-map-location-dot pointer-events-none"></i></button>
-                                        <button type="button" onclick="deletePlan(${plan.id})" class="text-red-400 hover:text-red-600 p-1 ${state.role !== 'admin' ? 'hidden' : ''}" title="Xóa"><i class="fa-solid fa-trash pointer-events-none"></i></button>
+                                        <button type="button" onclick="window.viewPlanDetails(${plan.id})" class="text-blue-500 hover:text-blue-700 p-1" title="Chi tiết"><i class="fa-solid fa-map-location-dot pointer-events-none"></i></button>
+                                        <button type="button" onclick="window.deletePlan(${plan.id})" class="text-red-400 hover:text-red-600 p-1 ${state.role !== 'admin' ? 'hidden' : ''}" title="Xóa"><i class="fa-solid fa-trash pointer-events-none"></i></button>
                                     </td>
                                 </tr>
                     `;
@@ -820,12 +1193,12 @@
                 sortedLists.forEach(list => {
                     html += `
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition flex flex-col">
-                            <div class="flex justify-between items-start mb-2"><h4 class="font-bold text-gray-800 text-lg line-clamp-2">${list.name}</h4><div class="flex space-x-1 ${state.role !== 'admin' ? 'hidden' : ''} flex-shrink-0 ml-2"><button type="button" onclick="deletePlanList(${list.id})" class="text-red-400 hover:text-red-600 p-1" title="Xóa"><i class="fa-solid fa-trash"></i></button></div></div>
+                            <div class="flex justify-between items-start mb-2"><h4 class="font-bold text-gray-800 text-lg line-clamp-2">${list.name}</h4><div class="flex space-x-1 ${state.role !== 'admin' ? 'hidden' : ''} flex-shrink-0 ml-2"><button type="button" onclick="window.deletePlanList(${list.id})" class="text-red-400 hover:text-red-600 p-1" title="Xóa"><i class="fa-solid fa-trash"></i></button></div></div>
                             <p class="text-xs text-gray-500 mb-3">${list.planIds.length} phương án được chọn</p>
-                            <p class="text-indigo-700 font-bold text-xl mb-4 flex-1">${formatMoney(list.totalCost)}</p>
+                            <p class="text-indigo-700 font-bold text-xl mb-4 flex-1">${window.formatMoney(list.totalCost)}</p>
                             <div class="flex space-x-2 mt-auto">
-                                <button type="button" onclick="viewPlanList(${list.id})" class="flex-1 bg-blue-50 text-blue-700 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100">Chi tiết</button>
-                                <button type="button" onclick="applyPlanList(${list.id})" class="flex-1 bg-blue-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 ${state.role !== 'admin' ? 'hidden' : ''}">Áp dụng</button>
+                                <button type="button" onclick="window.viewPlanList(${list.id})" class="flex-1 bg-blue-50 text-blue-700 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100">Chi tiết & Xuất File</button>
+                                <button type="button" onclick="window.applyPlanList(${list.id})" class="flex-1 bg-blue-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 ${state.role !== 'admin' ? 'hidden' : ''}">Áp dụng</button>
                             </div>
                         </div>`;
                 });
@@ -834,14 +1207,14 @@
             container.innerHTML = html;
         }
 
-        function togglePlanSelection(planId) {
-            if(!checkAuth()) return;
+        window.togglePlanSelection = function(planId) {
+            if(!window.checkAuth()) return;
             const targetPlan = state.plans.find(p => p.id == planId);
-            if (targetPlan) { targetPlan.selected = !targetPlan.selected; renderTab(); }
+            if (targetPlan) { targetPlan.selected = !targetPlan.selected; window.renderTab(); }
         }
 
-        function optimizePlans() {
-            if(!checkAuth()) return;
+        window.optimizePlans = function() {
+            if(!window.checkAuth()) return;
             let changed = false;
             CATEGORIES.forEach(cat => {
                 const plans = state.plans.filter(p => p.catId === cat.id);
@@ -851,20 +1224,20 @@
                     optimal.selected = true; changed = true;
                 }
             });
-            if(changed) { showToast('Đã tự động chọn mức giá rẻ nhất!', 'success'); renderTab(); }
+            if(changed) { window.showToast('Đã tự động chọn mức giá rẻ nhất!', 'success'); window.renderTab(); }
         }
 
-        function deletePlan(id) {
-            if(!checkAuth()) return;
-            showConfirm('Bạn có chắc chắn muốn xóa phương án này?', () => {
+        window.deletePlan = function(id) {
+            if(!window.checkAuth()) return;
+            window.showConfirm('Bạn có chắc chắn muốn xóa phương án này?', () => {
                 state.plans = state.plans.filter(p => p.id != id);
                 if (state.timeline) state.timeline.forEach(t => { if(t.planId == id) t.planId = null; });
-                showToast('Đã xóa phương án thành công!', 'success');
-                renderTab();
+                window.showToast('Đã xóa phương án thành công!', 'success');
+                window.renderTab();
             });
         }
 
-        function viewPlanDetails(id) {
+        window.viewPlanDetails = function(id) {
             const plan = state.plans.find(p => p.id == id);
             if (!plan) return; 
             const cat = CATEGORIES.find(c => c.id == plan.catId);
@@ -922,10 +1295,10 @@
                             <i class="fa-solid ${cat.icon} mr-2"></i> <span class="truncate">Chi tiết phương án</span>
                         </h3>
                         <div class="flex space-x-1 md:space-x-2 items-center flex-shrink-0">
-                            <button type="button" onclick="openEditPlanModal(${plan.id})" class="text-indigo-600 hover:text-indigo-800 px-2 py-1 md:px-3 md:py-1.5 rounded bg-indigo-100 hover:bg-indigo-200 transition text-xs md:text-sm font-bold ${state.role !== 'admin' ? 'hidden' : ''}">
+                            <button type="button" onclick="window.openEditPlanModal(${plan.id})" class="text-indigo-600 hover:text-indigo-800 px-2 py-1 md:px-3 md:py-1.5 rounded bg-indigo-100 hover:bg-indigo-200 transition text-xs md:text-sm font-bold ${state.role !== 'admin' ? 'hidden' : ''}">
                                 <i class="fa-solid fa-pen md:mr-1"></i> <span class="hidden md:inline">Sửa</span>
                             </button>
-                            <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-gray-600 px-2 ml-1 md:ml-2 border-l border-gray-300">
+                            <button type="button" onclick="window.closeModal()" class="text-gray-400 hover:text-gray-600 px-2 ml-1 md:ml-2 border-l border-gray-300">
                                 <i class="fa-solid fa-xmark text-lg md:text-xl"></i>
                             </button>
                         </div>
@@ -936,7 +1309,7 @@
                             <div class="bg-indigo-50 p-3 md:p-4 rounded-xl border border-indigo-100 flex justify-between sm:block items-center">
                                 <p class="text-gray-500 mb-0 sm:mb-1">Đơn giá</p>
                                 <p class="font-bold text-gray-800 text-sm md:text-lg">
-                                    ${plan.currency === 'SGD' ? `${formatSGD(plan.originalUnit)} <span class="text-[10px] md:text-xs font-normal text-gray-500">(~ ${formatMoney(plan.unit)})</span>` : formatMoney(plan.unit)}
+                                    ${plan.currency === 'SGD' ? `${window.formatSGD(plan.originalUnit)} <span class="text-[10px] md:text-xs font-normal text-gray-500">(~ ${window.formatMoney(plan.unit)})</span>` : window.formatMoney(plan.unit)}
                                 </p>
                             </div>
                             <div class="bg-indigo-50 p-3 md:p-4 rounded-xl border border-indigo-100 flex justify-between sm:block items-center">
@@ -945,7 +1318,7 @@
                             </div>
                             <div class="bg-indigo-600 p-3 md:p-4 rounded-xl shadow-md col-span-1 sm:col-span-2 text-white flex justify-between items-center">
                                 <span class="text-sm">Tổng dự kiến:</span>
-                                <span class="font-bold text-lg md:text-2xl">${formatMoney(plan.total)}</span>
+                                <span class="font-bold text-lg md:text-2xl">${window.formatMoney(plan.total)}</span>
                             </div>
                         </div>
 
@@ -964,80 +1337,11 @@
                     </div>
                 </div>
             `;
-            openModal(m);
-        }
-
-        window.openAddPlanModal = function() {
-            if(!checkAuth()) return;
-            let catOptions = CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            
-            const m = `
-                <div class="p-4 md:p-6 max-h-[85vh] flex flex-col">
-                    <h3 class="text-lg md:text-xl font-bold mb-4 sticky top-0 bg-white z-10 pb-2 border-b">Thêm phương án dự toán</h3>
-                    <div class="space-y-4 overflow-y-auto flex-1 pr-1">
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Hạng mục</label>
-                            <select id="inpCatId" onchange="toggleRouteSection()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                                ${catOptions}
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Mô tả phương án</label>
-                            <input type="text" id="inpDesc" placeholder="VD: Khách sạn A (3 đêm)" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                        </div>
-                        <div class="flex flex-col sm:flex-row gap-3">
-                            <div class="w-full sm:w-1/3">
-                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Loại tiền</label>
-                                <select id="inpCurrency" onchange="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                                    <option value="VND">VNĐ</option>
-                                    <option value="SGD">SGD (Đô Sing)</option>
-                                </select>
-                            </div>
-                            <div class="w-full sm:w-1/3">
-                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Đơn giá</label>
-                                <input type="number" id="inpUnit" oninput="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                            </div>
-                            <div class="w-full sm:w-1/3">
-                                <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Số lượng (Số chặng)</label>
-                                <input type="number" id="inpQty" value="1" oninput="calcTotal(); renderRouteInputs();" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                            </div>
-                        </div>
-
-                        <div id="routeSection" class="hidden bg-blue-50 p-3 md:p-4 rounded-xl border border-blue-100">
-                            <label class="block text-xs md:text-sm font-bold text-blue-800 mb-2"><i class="fa-solid fa-map-location-dot mr-1"></i>Chi tiết lộ trình di chuyển</label>
-                            <div id="routeInputsContainer" class="space-y-2 max-h-[150px] md:max-h-40 overflow-y-auto pr-1 md:pr-2 table-scroll-container">
-                                <!-- Injected via JS -->
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Vị trí Map (Tùy chọn)</label>
-                            <input type="text" id="inpMapLoc" placeholder="VD: Sân bay quốc tế Changi..." class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
-                        </div>
-
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán ảnh)</span></label>
-                            <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 bg-white outline-none"></div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
-                            <input type="text" id="inpTotal" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
-                        </div>
-                    </div>
-                    <div class="mt-4 md:mt-6 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white z-10">
-                        <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
-                        <button type="button" onclick="saveNewPlan()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base">Thêm vào danh sách</button>
-                    </div>
-                </div>
-            `;
-            openModal(m);
-            
-            setTimeout(() => setupPasteHandler('inpPlanNotes'), 50);
+            window.openModal(m);
         }
 
         window.openEditPlanModal = function(id) {
-            if(!checkAuth()) return;
+            if(!window.checkAuth()) return;
             const plan = state.plans.find(p => p.id == id);
             if(!plan) return;
 
@@ -1054,7 +1358,7 @@
                                 <input type="text" id="routeFrom_${i}" value="${r.from || ''}" placeholder="Từ" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
                                 <i class="fa-solid fa-arrow-right text-blue-400 text-xs mt-3"></i>
                                 <input type="text" id="routeTo_${i}" value="${r.to || ''}" placeholder="Đến" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
-                                <input type="number" id="routePrice_${i}" value="${r.price || 0}" oninput="calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
+                                <input type="number" id="routePrice_${i}" value="${r.price || 0}" oninput="window.calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
                             </div>
                         </div>
                     `;
@@ -1081,18 +1385,18 @@
                         <div class="flex flex-col sm:flex-row gap-3">
                             <div class="w-full sm:w-1/3">
                                 <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Loại tiền</label>
-                                <select id="inpCurrency" onchange="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                                <select id="inpCurrency" onchange="window.calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
                                     <option value="VND" ${plan.currency === 'VND' ? 'selected' : ''}>VNĐ</option>
                                     <option value="SGD" ${plan.currency === 'SGD' ? 'selected' : ''}>SGD (Đô Sing)</option>
                                 </select>
                             </div>
                             <div class="w-full sm:w-1/3">
                                 <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Đơn giá</label>
-                                <input type="number" id="inpUnit" value="${plan.originalUnit}" oninput="calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base" ${plan.catId === 3 ? 'readonly' : ''}>
+                                <input type="number" id="inpUnit" value="${plan.originalUnit}" oninput="window.calcTotal()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base" ${plan.catId === 3 ? 'readonly' : ''}>
                             </div>
                             <div class="w-full sm:w-1/3">
                                 <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Số lượng</label>
-                                <input type="number" id="inpQty" value="${plan.qty}" oninput="calcTotal(); renderRouteInputs();" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
+                                <input type="number" id="inpQty" value="${plan.qty}" oninput="window.calcTotal(); window.renderRouteInputs();" class="block w-full rounded-md border-gray-300 shadow-sm p-2 md:p-3 border focus:border-indigo-500 text-sm md:text-base">
                             </div>
                         </div>
 
@@ -1109,33 +1413,33 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán)</span></label>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Ghi chú & Hình ảnh <span class="text-indigo-600">(Bấm Ctrl+V để dán ảnh)</span></label>
                             <div id="inpPlanNotes" contenteditable="true" class="block w-full min-h-[80px] max-h-[250px] overflow-y-auto rounded-md border border-gray-300 shadow-sm p-2 md:p-3 bg-white outline-none">${notesVal}</div>
                         </div>
 
                         <div>
                             <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tổng cộng VNĐ</label>
-                            <input type="text" id="inpTotal" value="${formatMoney(plan.total)}" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
+                            <input type="text" id="inpTotal" value="${window.formatMoney(plan.total)}" readonly class="block w-full rounded-md bg-gray-50 border-gray-300 shadow-sm p-2 md:p-3 border text-gray-600 font-bold text-sm md:text-base">
                         </div>
                     </div>
                     <div class="mt-4 md:mt-6 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white z-10">
-                        <button type="button" onclick="viewPlanDetails(${plan.id})" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
-                        <button type="button" onclick="updatePlan(${plan.id})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base">Lưu</button>
+                        <button type="button" onclick="window.viewPlanDetails(${plan.id})" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
+                        <button type="button" onclick="window.updatePlan(${plan.id})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base">Lưu</button>
                     </div>
                 </div>
             `;
-            openModal(m);
+            window.openModal(m);
 
             setTimeout(() => {
-                setupPasteHandler('inpPlanNotes');
-                if (plan.catId === 3) renderRouteInputs();
+                window.setupPasteHandler('inpPlanNotes');
+                if (plan.catId === 3) window.renderRouteInputs();
             }, 50);
         }
 
         window.toggleRouteSection = function() {
             const catId = document.getElementById('inpCatId').value;
             const routeSec = document.getElementById('routeSection');
-            if (catId == '3') { routeSec.classList.remove('hidden'); renderRouteInputs(); } 
+            if (catId == '3') { routeSec.classList.remove('hidden'); window.renderRouteInputs(); } 
             else { routeSec.classList.add('hidden'); }
         };
 
@@ -1165,13 +1469,13 @@
                             <input type="text" id="routeFrom_${i}" value="${fromVal}" placeholder="Từ" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
                             <i class="fa-solid fa-arrow-right text-blue-400 text-xs mt-3"></i>
                             <input type="text" id="routeTo_${i}" value="${toVal}" placeholder="Đến" class="w-2/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500">
-                            <input type="number" id="routePrice_${i}" value="${priceVal}" oninput="calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
+                            <input type="number" id="routePrice_${i}" value="${priceVal}" oninput="window.calcTotalFromRoutes()" placeholder="Giá" class="w-1/5 rounded-md border-blue-200 shadow-sm p-2 text-xs md:text-sm focus:border-blue-500 font-bold text-blue-700 px-1">
                         </div>
                     </div>
                 `;
             }
             container.innerHTML = html;
-            setTimeout(calcTotalFromRoutes, 50);
+            setTimeout(window.calcTotalFromRoutes, 50);
         };
 
         window.calcTotalFromRoutes = function() {
@@ -1180,7 +1484,7 @@
             let totalUnitStr = 0;
             for(let i=1; i<=count; i++) totalUnitStr += (parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0);
             const unitInput = document.getElementById('inpUnit');
-            if(unitInput) { unitInput.value = totalUnitStr; calcTotal(); }
+            if(unitInput) { unitInput.value = totalUnitStr; window.calcTotal(); }
         };
 
         window.calcTotal = function() {
@@ -1190,8 +1494,44 @@
             const rate = state.trip.exchangeRate || 18500;
             const vndUnit = curr === 'SGD' ? u * rate : u;
             let totalVnd = (catId == '3') ? vndUnit : vndUnit * (parseFloat(document.getElementById('inpQty').value) || 0);
-            document.getElementById('inpTotal').value = formatMoney(totalVnd);
+            document.getElementById('inpTotal').value = window.formatMoney(totalVnd);
         };
+
+        window.updatePlan = function(id) {
+            const plan = state.plans.find(p => p.id == id);
+            if(!plan) return;
+
+            const desc = document.getElementById('inpDesc').value;
+            const currency = document.getElementById('inpCurrency').value;
+            const originalUnit = parseFloat(document.getElementById('inpUnit').value) || 0;
+            const qty = parseFloat(document.getElementById('inpQty').value) || 0;
+            const mapLocation = document.getElementById('inpMapLoc').value.trim();
+            const notes = document.getElementById('inpPlanNotes').innerHTML;
+            
+            if(!desc || originalUnit <= 0) { window.showToast("Dữ liệu không hợp lệ!", "error"); return; }
+
+            const rate = state.trip.exchangeRate || 18500;
+            const unit = currency === 'SGD' ? originalUnit * rate : originalUnit;
+
+            let routes = [];
+            if (plan.catId == 3) {
+                for(let i=1; i<=qty; i++) {
+                    const from = document.getElementById(`routeFrom_${i}`)?.value || '';
+                    const to = document.getElementById(`routeTo_${i}`)?.value || '';
+                    const price = parseFloat(document.getElementById(`routePrice_${i}`)?.value) || 0;
+                    if (from || to) routes.push({ from, to, price });
+                }
+            }
+            
+            plan.desc = desc; plan.currency = currency; plan.originalUnit = originalUnit;
+            plan.unit = unit; plan.qty = qty; plan.routes = routes;
+            plan.mapLocation = mapLocation; plan.notes = notes;
+            plan.total = (plan.catId == 3) ? unit : unit * qty;
+
+            window.showToast('Cập nhật thành công!'); 
+            window.renderTab(); 
+            window.viewPlanDetails(id);
+        }
 
         window.saveNewPlan = function() {
             const catId = parseInt(document.getElementById('inpCatId').value);
@@ -1202,7 +1542,7 @@
             const mapLocation = document.getElementById('inpMapLoc').value.trim();
             const notes = document.getElementById('inpPlanNotes').innerHTML;
             
-            if(!desc || originalUnit <= 0) { showToast("Dữ liệu không hợp lệ!", "error"); return; }
+            if(!desc || originalUnit <= 0) { window.showToast("Dữ liệu không hợp lệ!", "error"); return; }
 
             const rate = state.trip.exchangeRate || 18500;
             const unit = currency === 'SGD' ? originalUnit * rate : originalUnit;
@@ -1225,13 +1565,203 @@
                 currency, originalUnit, routes, selected: isFirstInCategory
             });
 
-            closeModal(); showToast('Đã thêm thành công'); renderTab();
+            window.closeModal(); window.showToast('Đã thêm thành công'); window.renderTab();
         };
 
+        window.promptSavePlanList = function() {
+            if(!window.checkAuth()) return;
+            const selectedPlans = state.plans.filter(p => p.selected);
+            if (selectedPlans.length === 0) { window.showToast("Vui lòng tích chọn ít nhất 1 phương án!", "error"); return; }
+            const total = selectedPlans.reduce((sum, p) => sum + p.total, 0);
+
+            const m = `
+                <div class="p-4 md:p-6">
+                    <h3 class="text-lg md:text-xl font-bold mb-4 text-blue-800">Lưu thành Kịch bản / Danh sách</h3>
+                    <p class="text-sm text-gray-600 mb-4">Bạn đang chọn <strong>${selectedPlans.length}</strong> phương án. Tổng chi phí: <strong class="text-indigo-700">${window.formatMoney(total)}</strong>.</p>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tên Kịch bản</label>
+                            <input type="text" id="inpPlanListName" placeholder="VD: Phương án đi siêu tiết kiệm" class="block w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button type="button" onclick="window.closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
+                        <button type="button" onclick="window.savePlanList()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">Lưu</button>
+                    </div>
+                </div>`;
+            window.openModal(m);
+        }
+
+        window.savePlanList = function() {
+            const name = document.getElementById('inpPlanListName').value.trim();
+            if (!name) return;
+            const selectedPlans = state.plans.filter(p => p.selected);
+            const totalCost = selectedPlans.reduce((sum, p) => sum + p.total, 0);
+            if (!state.planLists) state.planLists = [];
+            state.planLists.push({ id: Date.now(), name: name, planIds: selectedPlans.map(p => p.id), totalCost: totalCost, dateCreated: new Date().toISOString() });
+            window.closeModal(); window.showToast("Đã lưu thành Kịch bản mới!", "success"); window.renderTab();
+        }
+
+        window.deletePlanList = function(id) {
+            if(!window.checkAuth()) return;
+            window.showConfirm("Xóa kịch bản / danh sách phương án này?", () => { state.planLists = state.planLists.filter(l => l.id != id); window.showToast("Đã xóa", "success"); window.renderTab(); });
+        }
+
+        window.applyPlanList = function(id) {
+            if(!window.checkAuth()) return;
+            const list = state.planLists.find(l => l.id == id);
+            if (!list) return;
+            state.plans.forEach(p => p.selected = false);
+            state.plans.forEach(p => { if (list.planIds.includes(p.id)) p.selected = true; });
+            window.showToast(`Đã áp dụng cấu hình: ${list.name}`, 'success'); window.renderTab();
+        }
+
+        // Tích hợp yêu cầu: Gom nhóm & Nút Xuất File cho Kịch bản tại Modal Chi tiết Kịch Bản
+        window.viewPlanList = function(id) {
+            const list = state.planLists.find(l => l.id == id);
+            if (!list) return;
+            const plansInList = state.plans.filter(p => list.planIds.includes(p.id));
+            
+            const grouped = {};
+            plansInList.forEach(p => {
+                if(!grouped[p.catId]) grouped[p.catId] = [];
+                grouped[p.catId].push(p);
+            });
+
+            let tbody = '';
+            CATEGORIES.forEach(cat => {
+                if(grouped[cat.id]) {
+                    const catSubtotal = grouped[cat.id].reduce((sum, p) => sum + p.total, 0);
+                    tbody += `
+                        <tr class="bg-indigo-50 border-b border-indigo-100">
+                            <td colspan="2" class="py-2 px-3 text-xs md:text-sm font-bold text-indigo-800"><i class="fa-solid ${cat.icon} mr-2 w-4 text-center"></i>${cat.name.substring(3)}</td>
+                            <td class="py-2 px-3 text-xs md:text-sm text-right font-bold text-indigo-800 whitespace-nowrap">${window.formatMoney(catSubtotal)}</td>
+                        </tr>
+                    `;
+                    grouped[cat.id].forEach(p => {
+                        tbody += `
+                            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                <td class="py-2 px-3 text-xs md:text-sm text-gray-400 pl-4 md:pl-8 italic"></td>
+                                <td class="py-2 px-3 text-xs md:text-sm text-gray-800 break-words"><i class="fa-solid fa-angle-right text-gray-300 mr-2"></i>${p.desc}</td>
+                                <td class="py-2 px-3 text-xs md:text-sm text-right font-medium text-gray-700 whitespace-nowrap">${window.formatMoney(p.total)}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            });
+
+            const m = `
+                <div class="p-4 md:p-6 max-h-[85vh] flex flex-col">
+                    <div class="flex justify-between items-start mb-4 sticky top-0 bg-white z-10 pb-2 border-b">
+                        <h3 class="text-base md:text-lg font-bold text-gray-800 pr-2"><i class="fa-solid fa-list-check text-blue-600 mr-2"></i>${list.name}</h3>
+                        <button type="button" onclick="window.closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                    </div>
+                    
+                    <div id="export-list-content-${id}" class="overflow-y-auto flex-1 table-scroll-container bg-white p-2">
+                        <div class="text-center mb-4 hidden print-header">
+                            <h2 class="text-xl font-bold uppercase">CHI TIẾT KỊCH BẢN CHI PHÍ</h2>
+                            <h3 class="text-indigo-700 font-bold">${list.name}</h3>
+                        </div>
+                        <table class="w-full text-left min-w-[400px]">
+                            <thead class="text-xs text-gray-500 uppercase bg-gray-50"><tr><th class="py-2 px-3 w-1/4">Hạng mục</th><th class="py-2 px-3 w-1/2">Chi tiết</th><th class="py-2 px-3 text-right w-1/4">Chi phí</th></tr></thead>
+                            <tbody>${tbody}</tbody>
+                        </table>
+                        <div class="mt-4 pt-4 border-t flex justify-between items-center">
+                            <span class="text-gray-600 font-medium">Tổng chi phí:</span>
+                            <span class="text-xl md:text-2xl font-bold text-indigo-700">${window.formatMoney(list.totalCost)}</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t flex flex-col sm:flex-row justify-between items-center sticky bottom-0 bg-white z-10 gap-2">
+                        <div class="flex space-x-2 w-full sm:w-auto">
+                            <button type="button" onclick="window.exportPlanListImage(${id})" class="flex-1 sm:flex-none bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded text-xs font-medium hover:bg-emerald-100 border border-emerald-200" title="Xuất Ảnh"><i class="fa-solid fa-image mr-1"></i> Xuất Ảnh</button>
+                            <button type="button" onclick="window.exportPlanListPDF(${id})" class="flex-1 sm:flex-none bg-red-50 text-red-700 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-100 border border-red-200" title="Xuất PDF"><i class="fa-solid fa-file-pdf mr-1"></i> Xuất PDF</button>
+                            <button type="button" onclick="window.exportPlanListExcel(${id})" class="flex-1 sm:flex-none bg-green-50 text-green-700 px-3 py-1.5 rounded text-xs font-medium hover:bg-green-100 border border-green-200" title="Xuất Excel"><i class="fa-solid fa-file-excel mr-1"></i> Xuất Excel</button>
+                        </div>
+                        <button type="button" onclick="window.closeModal()" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm w-full sm:w-auto hidden sm:block">Đóng</button>
+                    </div>
+                </div>`;
+            window.openModal(m);
+        }
+
+        window.exportPlanListExcel = function(id) {
+            const list = state.planLists.find(l => l.id == id);
+            if (!list) return;
+            const plansInList = state.plans.filter(p => list.planIds.includes(p.id));
+
+            try {
+                const wb = XLSX.utils.book_new();
+                const data = [
+                    ['KỊCH BẢN CHI PHÍ NTU BRIDGE 2026'],
+                    ['Tên kịch bản:', list.name],
+                    ['Tổng chi phí:', list.totalCost],
+                    [],
+                    ['Hạng mục', 'Mô tả chi tiết', 'Đơn giá', 'Số lượng', 'Thành tiền']
+                ];
+
+                plansInList.forEach(p => {
+                    const cat = CATEGORIES.find(c => c.id == p.catId);
+                    data.push([
+                        cat ? cat.name.substring(3) : '',
+                        p.desc,
+                        p.unit,
+                        p.qty,
+                        p.total
+                    ]);
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                XLSX.utils.book_append_sheet(wb, ws, "Kịch bản");
+                XLSX.writeFile(wb, `KichBan_${list.name}.xlsx`);
+                window.showToast("Đã tải file Excel Kịch bản", "success");
+            } catch(e) { window.showToast("Lỗi xuất Excel!", "error"); }
+        }
+
+        window.exportPlanListPDF = function(id) {
+            const list = state.planLists.find(l => l.id == id);
+            if (!list) return;
+            
+            const element = document.getElementById(`export-list-content-${id}`);
+            const titleBlock = element.querySelector('.print-header');
+            if(titleBlock) titleBlock.classList.remove('hidden');
+
+            var opt = {
+                margin:       10,
+                filename:     `KichBan_${list.name}.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            window.showToast("Đang tạo PDF Kịch bản...", "info");
+            html2pdf().set(opt).from(element).save().then(() => {
+                if(titleBlock) titleBlock.classList.add('hidden');
+                window.showToast("Đã tải PDF", "success");
+            });
+        }
+
+        window.exportPlanListImage = function(id) {
+            const list = state.planLists.find(l => l.id == id);
+            if (!list) return;
+            const element = document.getElementById(`export-list-content-${id}`);
+            
+            const titleBlock = element.querySelector('.print-header');
+            if(titleBlock) titleBlock.classList.remove('hidden');
+
+            window.showToast("Đang tạo ảnh Kịch bản...", "info");
+            html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+                if(titleBlock) titleBlock.classList.add('hidden');
+                const link = document.createElement('a');
+                link.download = `KichBan_${list.name}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                window.showToast("Đã tải Ảnh Kịch bản", "success");
+            });
+        }
+
         // ==========================================
-        // 8. MODULE: ACTUAL EXPENSES
+        // 10. MODULE: ACTUAL EXPENSES
         // ==========================================
-        function renderActual(container) {
+        window.renderActual = function(container) {
             let totalActual = state.actuals.reduce((sum, a) => sum + a.amount, 0);
 
             let html = `
@@ -1240,7 +1770,7 @@
                         <h2 class="text-xl md:text-2xl font-bold text-gray-800">Chi phí Thực tế</h2>
                         <p class="text-xs md:text-sm text-gray-500">Ghi nhận các khoản đã chi trả thực tế trong chuyến đi.</p>
                     </div>
-                    <button type="button" onclick="openActualModal()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
+                    <button type="button" onclick="window.openActualModal()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
                         <i class="fa-solid fa-plus mr-2"></i>Ghi nhận chi phí
                     </button>
                 </div>
@@ -1271,23 +1801,23 @@
                 const invCount = state.invoices.filter(i => i.expenseId === act.id).length;
 
                 const invoiceBtn = invCount > 0 
-                    ? `<button type="button" onclick="viewActualDetails(${act.id}); event.stopPropagation();" class="bg-green-50 text-green-700 py-1 px-2 rounded-lg text-[10px] md:text-xs whitespace-nowrap hover:bg-green-100 border border-green-200 transition font-medium"><i class="fa-solid fa-check md:mr-1"></i><span class="hidden md:inline">Đã có</span> (${invCount})</button>`
-                    : `<button type="button" onclick="openUploadModal(${act.id}); event.stopPropagation();" class="bg-gray-50 text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-gray-200 transition py-1 px-2 rounded-lg text-[10px] md:text-xs whitespace-nowrap font-medium ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-arrow-up-from-bracket md:mr-1"></i><span class="hidden md:inline">Thêm HĐ</span></button>`;
+                    ? `<button type="button" onclick="window.viewActualDetails(${act.id}); event.stopPropagation();" class="bg-green-50 text-green-700 py-1 px-2 rounded-lg text-[10px] md:text-xs whitespace-nowrap hover:bg-green-100 border border-green-200 transition font-medium"><i class="fa-solid fa-check md:mr-1"></i><span class="hidden md:inline">Đã có</span> (${invCount})</button>`
+                    : `<button type="button" onclick="window.openUploadModal(${act.id}); event.stopPropagation();" class="bg-gray-50 text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-gray-200 transition py-1 px-2 rounded-lg text-[10px] md:text-xs whitespace-nowrap font-medium ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-arrow-up-from-bracket md:mr-1"></i><span class="hidden md:inline">Thêm HĐ</span></button>`;
 
                 html += `
-                    <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="viewActualDetails(${act.id})">
-                        <td class="p-3 md:p-4 text-gray-600 whitespace-nowrap">${formatDate(act.date)}</td>
+                    <tr class="hover:bg-gray-50 transition cursor-pointer" onclick="window.viewActualDetails(${act.id})">
+                        <td class="p-3 md:p-4 text-gray-600 whitespace-nowrap">${window.formatDate(act.date)}</td>
                         <td class="p-3 md:p-4 font-medium whitespace-nowrap"><i class="fa-solid ${cat.icon} text-gray-400 mr-1 md:mr-2"></i><span class="hidden sm:inline">${cat.name.substring(3)}</span></td>
                         <td class="p-3 md:p-4 text-gray-800 break-words">
                             ${act.desc}
                             ${hasNotes ? `<i class="fa-solid fa-file-lines text-blue-400 ml-1" title="Có ghi chú/hình ảnh"></i>` : ''}
                         </td>
                         <td class="p-3 md:p-4 text-right">
-                            ${act.currency === 'SGD' ? `<div class="font-bold text-gray-800 whitespace-nowrap">${formatSGD(act.originalAmount)}</div><div class="text-[10px] md:text-xs text-gray-400 font-medium whitespace-nowrap">~ ${formatMoney(act.amount)}</div>` : `<div class="font-bold text-gray-800 whitespace-nowrap">${formatMoney(act.amount)}</div>`}
+                            ${act.currency === 'SGD' ? `<div class="font-bold text-gray-800 whitespace-nowrap">${window.formatSGD(act.originalAmount)}</div><div class="text-[10px] md:text-xs text-gray-400 font-medium whitespace-nowrap">~ ${window.formatMoney(act.amount)}</div>` : `<div class="font-bold text-gray-800 whitespace-nowrap">${window.formatMoney(act.amount)}</div>`}
                         </td>
                         <td class="p-3 md:p-4 text-center">${invoiceBtn}</td>
                         <td class="p-3 md:p-4 text-center" onclick="event.stopPropagation()">
-                            <button type="button" onclick="deleteActual(${act.id})" class="text-red-400 hover:text-red-600 transition p-1 ${state.role !== 'admin' ? 'hidden' : ''}" title="Xóa">
+                            <button type="button" onclick="window.deleteActual(${act.id})" class="text-red-400 hover:text-red-600 transition p-1 ${state.role !== 'admin' ? 'hidden' : ''}" title="Xóa">
                                 <i class="fa-solid fa-trash pointer-events-none"></i>
                             </button>
                         </td>
@@ -1300,7 +1830,7 @@
                             <tfoot class="bg-gray-50 border-t border-gray-200 sticky bottom-0 z-10 shadow-[0_-2px_4px_rgba(0,0,0,0.05)]">
                                 <tr>
                                     <td colspan="3" class="p-3 md:p-4 text-right font-bold text-gray-600 uppercase text-xs md:text-sm">Tổng chi thực tế:</td>
-                                    <td class="p-3 md:p-4 text-right font-bold text-indigo-700 text-base md:text-lg whitespace-nowrap">${formatMoney(totalActual)}</td>
+                                    <td class="p-3 md:p-4 text-right font-bold text-indigo-700 text-base md:text-lg whitespace-nowrap">${window.formatMoney(totalActual)}</td>
                                     <td colspan="2"></td>
                                 </tr>
                             </tfoot>
@@ -1321,13 +1851,13 @@
             if (invoices.length > 0) {
                 invoiceHtml = `<h4 class="font-bold text-gray-800 mb-2 mt-4 flex justify-between items-center">
                     <span><i class="fa-solid fa-file-invoice text-blue-500 mr-2"></i>Chứng từ tải lên</span>
-                    <button type="button" onclick="openUploadModal(${act.id})" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100 ${state.role !== 'admin' ? 'hidden' : ''}">+ Thêm hóa đơn</button>
+                    <button type="button" onclick="window.openUploadModal(${act.id})" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100 ${state.role !== 'admin' ? 'hidden' : ''}">+ Thêm hóa đơn</button>
                 </h4><div class="flex flex-wrap gap-3">`;
                 invoices.forEach(inv => {
                     invoiceHtml += `
                         <div class="relative group border rounded-lg overflow-hidden w-24 h-24 shadow-sm">
                             <a href="${inv.dataUrl}" target="_blank"><img src="${inv.dataUrl}" class="w-full h-full object-cover cursor-pointer hover:opacity-80"></a>
-                            <button type="button" onclick="deleteInvoice(${inv.id});" class="absolute top-1 right-1 bg-red-500 text-white w-6 h-6 rounded-full opacity-0 group-hover:opacity-100 transition flex items-center justify-center ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-xmark text-xs"></i></button>
+                            <button type="button" onclick="window.deleteInvoice(${inv.id});" class="absolute top-1 right-1 bg-red-50 text-red-600 w-6 h-6 rounded-full opacity-0 group-hover:opacity-100 transition flex items-center justify-center hover:bg-red-100 ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-xmark text-xs"></i></button>
                         </div>`;
                 });
                 invoiceHtml += `</div>`;
@@ -1335,7 +1865,7 @@
                 invoiceHtml = `
                     <div class="mt-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl p-4 text-center">
                         <p class="text-xs text-gray-500 mb-2">Chưa có hóa đơn nào được tải lên cho mục này.</p>
-                        <button type="button" onclick="openUploadModal(${act.id})" class="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-100 shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-upload mr-1"></i> Tải Hóa đơn lên</button>
+                        <button type="button" onclick="window.openUploadModal(${act.id})" class="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-100 shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-upload mr-1"></i> Tải Hóa đơn lên</button>
                     </div>
                 `;
             }
@@ -1349,19 +1879,19 @@
                             <i class="fa-solid ${cat.icon} mr-2"></i> Chi tiết khoản chi
                         </h3>
                         <div class="flex space-x-2 items-center">
-                            <button type="button" onclick="openActualModal(${act.id})" class="text-indigo-600 hover:bg-indigo-100 px-3 py-1 rounded transition text-sm font-bold ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-pen mr-1"></i>Sửa</button>
-                            <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-gray-600 border-l pl-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                            <button type="button" onclick="window.openActualModal(${act.id})" class="text-indigo-600 hover:bg-indigo-100 px-3 py-1 rounded transition text-sm font-bold ${state.role !== 'admin' ? 'hidden' : ''}"><i class="fa-solid fa-pen mr-1"></i>Sửa</button>
+                            <button type="button" onclick="window.closeModal()" class="text-gray-400 hover:text-gray-600 border-l pl-2"><i class="fa-solid fa-xmark text-xl"></i></button>
                         </div>
                     </div>
                     <div class="p-4 md:p-6 overflow-y-auto">
                         <div class="mb-4">
-                            <p class="text-xs text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i> Ngày chi: <strong>${formatDate(act.date)}</strong></p>
+                            <p class="text-xs text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i> Ngày chi: <strong>${window.formatDate(act.date)}</strong></p>
                             <h4 class="text-lg font-bold text-gray-800 break-words">${act.desc}</h4>
                         </div>
                         <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex justify-between items-center mb-4">
                             <span class="text-sm font-medium text-gray-600">Số tiền thanh toán:</span>
                             <span class="font-bold text-xl md:text-2xl text-indigo-700">
-                                ${act.currency === 'SGD' ? `${formatSGD(act.originalAmount)} <span class="text-sm text-gray-500">(~${formatMoney(act.amount)})</span>` : formatMoney(act.amount)}
+                                ${act.currency === 'SGD' ? `${window.formatSGD(act.originalAmount)} <span class="text-sm text-gray-500">(~${window.formatMoney(act.amount)})</span>` : window.formatMoney(act.amount)}
                             </span>
                         </div>
                         ${notesHtml}
@@ -1369,11 +1899,11 @@
                     </div>
                 </div>
             `;
-            openModal(m);
+            window.openModal(m);
         }
 
         window.openActualModal = function(id = null) {
-            if(!checkAuth()) return;
+            if(!window.checkAuth()) return;
             let catOptions = CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             
             let act = { date: new Date().toISOString().split('T')[0], catId: 1, desc: '', currency: 'VND', originalAmount: '', notes: '' };
@@ -1420,13 +1950,13 @@
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white">
-                        <button type="button" onclick="${id ? `viewActualDetails(${id})` : 'closeModal()'}" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
-                        <button type="button" onclick="saveActual(${id ? id : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button>
+                        <button type="button" onclick="${id ? `window.viewActualDetails(${id})` : 'window.closeModal()'}" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm">Hủy</button>
+                        <button type="button" onclick="window.saveActual(${id ? id : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Lưu</button>
                     </div>
                 </div>
             `;
-            openModal(m);
-            setTimeout(() => setupPasteHandler('inpActNotes'), 50);
+            window.openModal(m);
+            setTimeout(() => window.setupPasteHandler('inpActNotes'), 50);
         }
 
         window.saveActual = function(id) {
@@ -1437,7 +1967,7 @@
             const originalAmount = parseFloat(document.getElementById('inpActAmount').value) || 0;
             const notes = document.getElementById('inpActNotes').innerHTML;
             
-            if(!desc || originalAmount <= 0) { showToast("Vui lòng nhập Diễn giải và Số tiền!", "error"); return; }
+            if(!desc || originalAmount <= 0) { window.showToast("Vui lòng nhập Diễn giải và Số tiền!", "error"); return; }
 
             const rate = state.trip.exchangeRate || 18500;
             const amount = currency === 'SGD' ? originalAmount * rate : originalAmount;
@@ -1448,30 +1978,30 @@
             } else {
                 state.actuals.push({ id: Date.now(), catId, desc, amount, date, currency, originalAmount, notes });
             }
-            closeModal(); showToast('Đã lưu khoản chi!'); 
-            if(id) viewActualDetails(id); else renderTab();
+            window.closeModal(); window.showToast('Đã lưu khoản chi!'); 
+            if(id) window.viewActualDetails(id); else window.renderTab();
         }
 
         window.deleteActual = function(id) {
-            if(!checkAuth()) return;
-            showConfirm('Bạn có chắc chắn muốn xóa khoản chi này? Các hình ảnh gắn kèm cũng sẽ bị xóa.', () => {
+            if(!window.checkAuth()) return;
+            window.showConfirm('Bạn có chắc chắn muốn xóa khoản chi này? Các hình ảnh gắn kèm cũng sẽ bị xóa.', () => {
                 state.actuals = state.actuals.filter(a => a.id != id);
                 state.invoices = state.invoices.filter(i => i.expenseId != id);
-                showToast('Đã xóa', 'success'); renderTab();
+                window.showToast('Đã xóa', 'success'); window.renderTab();
             });
         }
 
         // ==========================================
-        // 9. MODULE: INVOICES & MINH CHỨNG
+        // 11. MODULE: INVOICES & MINH CHỨNG
         // ==========================================
-        function renderInvoices(container) {
+        window.renderInvoices = function(container) {
             let html = `
                 <div class="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mb-6 gap-4">
                     <div>
                         <h2 class="text-xl md:text-2xl font-bold text-gray-800">Quản lý Hóa đơn, Minh chứng</h2>
                         <p class="text-xs md:text-sm text-gray-500">Lưu trữ hình ảnh hóa đơn gắn với chi phí thực tế.</p>
                     </div>
-                    <button type="button" onclick="openUploadModal()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
+                    <button type="button" onclick="window.openUploadModal()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm ${state.role !== 'admin' ? 'hidden' : ''}">
                         <i class="fa-solid fa-upload mr-2"></i>Upload Hóa đơn
                     </button>
                 </div>
@@ -1491,16 +2021,16 @@
                 html += `
                     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col w-full group">
                         <div class="h-32 md:h-40 bg-gray-100 relative overflow-hidden">
-                            <img src="${imageSrc}" class="w-full h-full object-cover cursor-pointer hover:scale-105 transition duration-300" alt="Hóa đơn" onclick="viewActualDetails(${inv.expenseId})">
+                            <img src="${imageSrc}" class="w-full h-full object-cover cursor-pointer hover:scale-105 transition duration-300" alt="Hóa đơn" onclick="window.viewActualDetails(${inv.expenseId})">
                             <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition pointer-events-none"></div>
                             
                             <div class="absolute top-2 right-2 flex space-x-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition z-10">
                                 <a href="${imageSrc}" download="${inv.filename}" class="bg-white text-gray-800 w-7 h-7 rounded-full shadow-md flex items-center justify-center hover:bg-gray-100" title="Tải xuống"><i class="fa-solid fa-download text-xs"></i></a>
-                                ${state.role === 'admin' ? `<button type="button" onclick="deleteInvoice(${inv.id})" class="bg-red-500 text-white w-7 h-7 rounded-full shadow-md flex items-center justify-center hover:bg-red-600" title="Xóa"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+                                ${state.role === 'admin' ? `<button type="button" onclick="window.deleteInvoice(${inv.id})" class="bg-red-50 text-red-600 w-7 h-7 rounded-full shadow-md flex items-center justify-center hover:bg-red-100" title="Xóa"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
                             </div>
                         </div>
-                        <div class="p-2 md:p-3 flex-1 flex flex-col cursor-pointer" onclick="viewActualDetails(${inv.expenseId})">
-                            <p class="text-[10px] text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i>${formatDate(inv.date)}</p>
+                        <div class="p-2 md:p-3 flex-1 flex flex-col cursor-pointer" onclick="window.viewActualDetails(${inv.expenseId})">
+                            <p class="text-[10px] text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i>${window.formatDate(inv.date)}</p>
                             <h4 class="font-bold text-xs text-gray-800 line-clamp-2 mb-1" title="${expDesc}">${expDesc}</h4>
                         </div>
                     </div>
@@ -1512,9 +2042,9 @@
         }
 
         window.openUploadModal = function(prefillExpId = null) {
-            if(!checkAuth()) return;
-            let actOptions = state.actuals.map(a => `<option value="${a.id}" ${prefillExpId == a.id ? 'selected' : ''}>${a.desc} - ${formatMoney(a.amount)}</option>`).join('');
-            if(state.actuals.length === 0) { showToast("Vui lòng ghi nhận chi phí thực tế trước khi tải hóa đơn!", "error"); return; }
+            if(!window.checkAuth()) return;
+            let actOptions = state.actuals.map(a => `<option value="${a.id}" ${prefillExpId == a.id ? 'selected' : ''}>${a.desc} - ${window.formatMoney(a.amount)}</option>`).join('');
+            if(state.actuals.length === 0) { window.showToast("Vui lòng ghi nhận chi phí thực tế trước khi tải hóa đơn!", "error"); return; }
 
             const m = `
                 <div class="p-4 md:p-6">
@@ -1530,49 +2060,48 @@
                         </div>
                     </div>
                     <div class="mt-6 flex justify-end space-x-3">
-                        <button type="button" onclick="${prefillExpId ? `viewActualDetails(${prefillExpId})` : 'closeModal()'}" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
-                        <button type="button" onclick="saveInvoice(${prefillExpId ? prefillExpId : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload</button>
+                        <button type="button" onclick="${prefillExpId ? `window.viewActualDetails(${prefillExpId})` : 'window.closeModal()'}" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50 text-sm md:text-base">Hủy</button>
+                        <button type="button" onclick="window.saveInvoice(${prefillExpId ? prefillExpId : 'null'})" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm md:text-base"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload</button>
                     </div>
                 </div>
             `;
-            openModal(m);
+            window.openModal(m);
         }
 
         window.saveInvoice = function(prefillExpId) {
             const expId = parseInt(document.getElementById('inpInvExpId').value);
             const fileInput = document.getElementById('inpInvFile');
-            if(fileInput.files.length === 0) { showToast("Vui lòng chọn 1 file ảnh!", "error"); return; }
+            if(fileInput.files.length === 0) { window.showToast("Vui lòng chọn 1 file ảnh!", "error"); return; }
 
-            // Giảm kích thước ảnh trước khi lưu để tiết kiệm dung lượng
-            resizeImage(fileInput.files[0], 1200, (resizedDataUrl) => {
+            window.resizeImage(fileInput.files[0], 1200, (resizedDataUrl) => {
                 state.invoices.push({
                     id: Date.now(), expenseId: expId, filename: fileInput.files[0].name,
                     dataUrl: resizedDataUrl, date: new Date().toISOString().split('T')[0]
                 });
-                showToast('Đã upload hóa đơn thành công!'); 
-                if (prefillExpId) { viewActualDetails(prefillExpId); } 
-                else { closeModal(); renderTab(); }
+                window.showToast('Đã upload hóa đơn thành công!'); 
+                if (prefillExpId) { window.viewActualDetails(prefillExpId); } 
+                else { window.closeModal(); window.renderTab(); }
             });
         }
 
         window.deleteInvoice = function(id) {
-            if(!checkAuth()) return;
-            showConfirm('Xóa minh chứng hóa đơn này?', () => {
+            if(!window.checkAuth()) return;
+            window.showConfirm('Xóa minh chứng hóa đơn này?', () => {
                 const inv = state.invoices.find(i=>i.id == id);
                 const actId = inv ? inv.expenseId : null;
                 state.invoices = state.invoices.filter(i => i.id != id);
-                showToast('Đã xóa hóa đơn', 'success'); 
+                window.showToast('Đã xóa hóa đơn', 'success'); 
                 
                 if (document.getElementById('modal-overlay').classList.contains('hidden') === false) {
-                     closeModal(); setTimeout(() => { if(actId) viewActualDetails(actId); else renderTab(); }, 100); 
-                } else { renderTab(); }
+                     window.closeModal(); setTimeout(() => { if(actId) window.viewActualDetails(actId); else window.renderTab(); }, 100); 
+                } else { window.renderTab(); }
             });
         }
 
         // ==========================================
-        // 10. MODULE: REPORT & EXPORT
+        // 12. MODULE: REPORT & EXPORT
         // ==========================================
-        function renderExport(container) {
+        window.renderExport = function(container) {
             let html = `
                 <div class="mb-6">
                     <h2 class="text-xl md:text-2xl font-bold text-gray-800">Báo cáo & Xuất file</h2>
@@ -1583,19 +2112,19 @@
                         <i class="fa-solid fa-file-excel text-4xl md:text-5xl text-green-600 mb-3 md:mb-4"></i>
                         <h3 class="font-bold text-base md:text-lg mb-1 md:mb-2">Bảng tính Excel</h3>
                         <p class="text-xs md:text-sm text-gray-500 mb-4 flex-1">Bảng chi tiết dự toán và thực tế phân theo sheet.</p>
-                        <button type="button" onclick="exportExcel()" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm md:text-base">Xuất Excel</button>
+                        <button type="button" onclick="window.exportExcel()" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm md:text-base">Xuất Excel</button>
                     </div>
                     <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 text-center hover:shadow-md transition flex flex-col">
                         <i class="fa-solid fa-file-pdf text-4xl md:text-5xl text-red-600 mb-3 md:mb-4"></i>
                         <h3 class="font-bold text-base md:text-lg mb-1 md:mb-2">Báo cáo PDF</h3>
                         <p class="text-xs md:text-sm text-gray-500 mb-4 flex-1">Thuyết minh tài chính kèm biểu đồ, hóa đơn A4.</p>
-                        <button type="button" onclick="generateAndExportPDF()" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 text-sm md:text-base">Tạo PDF</button>
+                        <button type="button" onclick="window.generateAndExportPDF()" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 text-sm md:text-base">Tạo PDF</button>
                     </div>
                     <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 text-center hover:shadow-md transition flex flex-col sm:col-span-2 md:col-span-1">
                         <i class="fa-solid fa-file-word text-4xl md:text-5xl text-blue-600 mb-3 md:mb-4"></i>
                         <h3 class="font-bold text-base md:text-lg mb-1 md:mb-2">Báo cáo Word</h3>
                         <p class="text-xs md:text-sm text-gray-500 mb-4 flex-1">Xuất bản nháp thuyết minh để tùy chỉnh văn bản.</p>
-                        <button type="button" onclick="exportWord()" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm md:text-base">Xuất Word</button>
+                        <button type="button" onclick="window.exportWord()" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm md:text-base">Xuất Word</button>
                     </div>
                 </div>
             `;
@@ -1605,7 +2134,7 @@
         let hiddenReportChartInstance = null;
         let hiddenReportPieChartInstance = null;
 
-        function generateChartImagesForReport(callback) {
+        window.generateChartImagesForReport = function(callback) {
             const canvasBar = document.getElementById('hiddenReportChart'); const ctxBar = canvasBar.getContext('2d');
             ctxBar.fillStyle = 'white'; ctxBar.fillRect(0, 0, canvasBar.width, canvasBar.height);
             const canvasPie = document.getElementById('hiddenReportPieChart'); const ctxPie = canvasPie.getContext('2d');
@@ -1625,7 +2154,7 @@
             setTimeout(() => { callback(canvasBar.toDataURL('image/png'), canvasPie.toDataURL('image/png')); }, 500);
         }
 
-        function buildReportHTML(barChartImg, pieChartImg) {
+        window.buildReportHTML = function(barChartImg, pieChartImg) {
             const estimatedTotal = state.plans.filter(p => p.selected).reduce((sum, p) => sum + p.total, 0);
             const actualTotal = state.actuals.reduce((sum, a) => sum + a.amount, 0);
             
@@ -1650,7 +2179,7 @@
                 const sortedTimeline = [...state.timeline].sort((a,b) => new Date(a.date + 'T' + (a.time||'00:00')) - new Date(b.date + 'T' + (b.time||'00:00')));
                 let currentDate = '';
                 sortedTimeline.forEach(t => {
-                    const fd = formatDate(t.date); const isNew = fd !== currentDate; if (isNew) currentDate = fd;
+                    const fd = window.formatDate(t.date); const isNew = fd !== currentDate; if (isNew) currentDate = fd;
                     timelineHtml += `<tr class="avoid-break"><td style="border: 1px solid #999; padding: 8px; text-align: center;">${isNew ? `<strong>${fd}</strong><br>` : ''}<span style="color: #4338ca;">${t.time || ''}</span></td><td style="border: 1px solid #999; padding: 8px; font-weight: bold;">${t.title}</td><td style="border: 1px solid #999; padding: 8px;">${t.location || ''}</td><td style="border: 1px solid #999; padding: 8px; font-style: italic;">${t.notes || ''}</td></tr>`;
                 });
                 timelineHtml += `</tbody></table></div>`;
@@ -1662,8 +2191,8 @@
                 state.invoices.forEach((inv, index) => {
                     const expense = state.actuals.find(a => a.id === inv.expenseId);
                     const expDesc = expense ? expense.desc : 'Không xác định';
-                    const expAmount = expense ? formatMoney(expense.amount) : '';
-                    const date = formatDate(inv.date);
+                    const expAmount = expense ? window.formatMoney(expense.amount) : '';
+                    const date = window.formatDate(inv.date);
                     const breakClass = (index > 0 && index % 2 === 0) ? 'page-break' : '';
 
                     invoiceHtml += `
@@ -1706,56 +2235,65 @@
                 const actData = [['BẢNG THỰC TẾ', '', '', ''], [], ['Ngày', 'Hạng mục', 'Diễn giải', 'Số tiền']];
                 state.actuals.forEach(a => { actData.push([a.date, CATEGORIES.find(c => c.id === a.catId).name.substring(3), a.desc, a.amount]); });
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(actData), "Thực tế");
-                XLSX.writeFile(wb, "NtuBridge2026_Report.xlsx"); showToast("Đã tải file Excel");
-            } catch(e) { showToast("Lỗi xuất Excel!", "error"); }
+                XLSX.writeFile(wb, "NtuBridge2026_Report.xlsx"); window.showToast("Đã tải file Excel");
+            } catch(e) { window.showToast("Lỗi xuất Excel!", "error"); }
         }
 
         window.generateAndExportPDF = function() {
-            showToast("Đang tạo biểu đồ...", "info");
-            generateChartImagesForReport((barChartImg, pieChartImg) => {
+            window.showToast("Đang tạo biểu đồ...", "info");
+            window.generateChartImagesForReport((barChartImg, pieChartImg) => {
                 const area = document.getElementById('report-render-area');
-                area.innerHTML = buildReportHTML(barChartImg, pieChartImg); area.style.display = 'block'; 
+                area.innerHTML = window.buildReportHTML(barChartImg, pieChartImg); area.style.display = 'block'; 
                 var opt = { margin: [15, 15, 15, 15], filename: 'NtuBridge2026_Report.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-                showToast("Đang tạo PDF, vui lòng đợi...", "info");
-                html2pdf().set(opt).from(area).save().then(() => { area.style.display = 'none'; showToast("Tạo PDF thành công!", "success"); });
+                window.showToast("Đang tạo PDF, vui lòng đợi...", "info");
+                html2pdf().set(opt).from(area).save().then(() => { area.style.display = 'none'; window.showToast("Tạo PDF thành công!", "success"); });
             });
         }
 
         window.exportWord = function() {
-            generateChartImagesForReport((barChartImg, pieChartImg) => {
-                const htmlContent = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Word</title><style>body{font-family:'Times New Roman';} table{border-collapse:collapse; width:100%;} th,td{border:1px solid windowtext; padding:5px;} .page-break{mso-special-character:line-break; page-break-before:always;}</style></head><body>${buildReportHTML(barChartImg, pieChartImg)}</body></html>`;
+            window.generateChartImagesForReport((barChartImg, pieChartImg) => {
+                const htmlContent = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Word</title><style>body{font-family:'Times New Roman';} table{border-collapse:collapse; width:100%;} th,td{border:1px solid windowtext; padding:5px;} .page-break{mso-special-character:line-break; page-break-before:always;}</style></head><body>${window.buildReportHTML(barChartImg, pieChartImg)}</body></html>`;
                 const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
-                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'NtuBridge2026_Report.doc'; document.body.appendChild(link); link.click(); document.body.removeChild(link); showToast("Đã tải file Word");
+                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'NtuBridge2026_Report.doc'; document.body.appendChild(link); link.click(); document.body.removeChild(link); window.showToast("Đã tải file Word");
             });
         }
 
         // ==========================================
-        // 11. MODULE: SETTINGS
+        // 13. MODULE: SETTINGS
         // ==========================================
-        function renderSettings(container) {
+        window.renderSettings = function(container) {
             let html = `
                 <div class="mb-6"><h2 class="text-xl md:text-2xl font-bold text-gray-800">Quản lý Dữ liệu</h2></div>
 
                 <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 mb-4 md:mb-6">
-                    <h3 class="font-bold text-base md:text-lg mb-2 md:mb-4 text-blue-700"><i class="fa-solid fa-share-nodes mr-2"></i>Chia sẻ & Cloud (Mới)</h3>
+                    <h3 class="font-bold text-base md:text-lg mb-2 md:mb-4 text-blue-700"><i class="fa-solid fa-share-nodes mr-2"></i>Chia sẻ & Cloud</h3>
                     <p class="text-xs md:text-sm text-gray-600 mb-4">Lưu trữ dữ liệu lên Máy chủ hoặc chia sẻ link trực tiếp cho đội thi.</p>
                     <div class="flex flex-wrap gap-3">
-                        <button type="button" onclick="shareApp()" class="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 shadow-sm text-sm"><i class="fa-solid fa-link mr-2"></i>Tạo Link Chia Sẻ</button>
-                        <button type="button" onclick="saveToCloudCache()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm text-sm"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Lưu vào Bộ nhớ đệm</button>
-                        <button type="button" onclick="loadFromCloudCache()" class="w-full sm:w-auto bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-100 shadow-sm border border-indigo-200 text-sm"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>Tải từ Bộ nhớ đệm</button>
+                        <button type="button" onclick="window.openShareModal()" class="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 shadow-sm text-sm"><i class="fa-solid fa-link mr-2"></i>Tạo Link Chia Sẻ / Xem Nhóm</button>
+                        <button type="button" onclick="window.saveToCloudCache()" class="w-full sm:w-auto bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm text-sm"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Lưu Bộ nhớ đệm (Cloud)</button>
+                        <button type="button" onclick="window.loadFromCloudCache()" class="w-full sm:w-auto bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-100 shadow-sm border border-indigo-200 text-sm"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>Tải từ Bộ nhớ đệm (Cloud)</button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 mb-4 md:mb-6 hidden">
+                    <h3 class="font-bold text-base md:text-lg mb-2 md:mb-4 text-emerald-700"><i class="fa-brands fa-google-drive mr-2"></i>Google Drive Cá Nhân</h3>
+                    <p class="text-xs md:text-sm text-gray-600 mb-4">Lưu trực tiếp vào Drive riêng. Yêu cầu phải thay API Key trong source code.</p>
+                    <div class="flex flex-wrap gap-3">
+                        <button type="button" onclick="window.saveToGoogleDrive()" class="w-full sm:w-auto bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 shadow-sm text-sm"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Lưu vào Drive</button>
+                        <button type="button" onclick="window.loadFromGoogleDrive()" class="w-full sm:w-auto bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg hover:bg-emerald-100 shadow-sm border border-emerald-200 text-sm"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>Tải từ Drive</button>
                     </div>
                 </div>
 
                 <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 mb-4 md:mb-6">
                     <h3 class="font-bold text-base md:text-lg mb-2 md:mb-4 text-indigo-700"><i class="fa-solid fa-download mr-2"></i>Backup Offline (File JSON)</h3>
-                    <button type="button" onclick="backupData()" class="w-full sm:w-auto bg-gray-800 text-white px-4 md:px-6 py-2 rounded-lg hover:bg-gray-900 shadow-sm text-sm md:text-base"><i class="fa-solid fa-file-arrow-down mr-2"></i>Tải file Backup (.json)</button>
+                    <button type="button" onclick="window.backupData()" class="w-full sm:w-auto bg-gray-800 text-white px-4 md:px-6 py-2 rounded-lg hover:bg-gray-900 shadow-sm text-sm md:text-base"><i class="fa-solid fa-file-arrow-down mr-2"></i>Tải file Backup (.json)</button>
                 </div>
 
                 <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
                     <h3 class="font-bold text-base md:text-lg mb-2 md:mb-4 text-orange-600"><i class="fa-solid fa-upload mr-2"></i>Restore Offline</h3>
                     <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4">
                         <input type="file" id="inpRestore" accept=".json" class="block w-full sm:max-w-sm text-xs md:text-sm text-gray-500 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-orange-50 file:text-orange-700">
-                        <button type="button" onclick="restoreData()" class="w-full sm:w-auto bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 text-sm"><i class="fa-solid fa-rotate-left mr-2"></i>Khôi phục</button>
+                        <button type="button" onclick="window.restoreData()" class="w-full sm:w-auto bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 text-sm"><i class="fa-solid fa-rotate-left mr-2"></i>Khôi phục</button>
                     </div>
                 </div>
             `;
@@ -1765,34 +2303,34 @@
         window.backupData = function() {
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
             const node = document.createElement('a'); node.setAttribute("href", dataStr); node.setAttribute("download", `NtuCostManager_Backup_${new Date().toISOString().split('T')[0]}.json`);
-            document.body.appendChild(node); node.click(); node.remove(); showToast("Đã tải file Backup");
+            document.body.appendChild(node); node.click(); node.remove(); window.showToast("Đã tải file Backup");
         }
 
         window.restoreData = function() {
-            if(!checkAuth()) return;
+            if(!window.checkAuth()) return;
             const fileInput = document.getElementById('inpRestore');
-            if(fileInput.files.length === 0) { showToast("Chọn file backup (.json)", "error"); return; }
-            showConfirm("Toàn bộ dữ liệu hiện tại sẽ bị xóa. Tiếp tục?", () => {
+            if(fileInput.files.length === 0) { window.showToast("Chọn file backup (.json)", "error"); return; }
+            window.showConfirm("Toàn bộ dữ liệu hiện tại sẽ bị xóa. Tiếp tục?", () => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     try {
                         const parsed = JSON.parse(e.target.result);
-                        if(parsed.trip && parsed.plans) { state = parsed; showToast("Khôi phục thành công!", "success"); switchTab('dashboard'); } 
-                        else { showToast("File không đúng định dạng!", "error"); }
-                    } catch(err) { showToast("Lỗi đọc file JSON.", "error"); }
+                        if(parsed.trip && parsed.plans) { state = parsed; window.showToast("Khôi phục thành công!", "success"); window.switchTab('dashboard'); } 
+                        else { window.showToast("File không đúng định dạng!", "error"); }
+                    } catch(err) { window.showToast("Lỗi đọc file JSON.", "error"); }
                 };
                 reader.readAsText(fileInput.files[0]);
             });
         }
 
         // ==========================================
-        // 12. INITIALIZATION
+        // 14. INITIALIZATION
         // ==========================================
         window.addEventListener('DOMContentLoaded', () => {
             if (typeof window.checkSharedLink === 'function') {
                 window.checkSharedLink();
             } else {
-                renderTab();
+                window.renderTab();
             }
         });
 
